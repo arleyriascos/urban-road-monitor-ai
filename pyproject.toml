@@ -1,0 +1,36 @@
+[project]
+name = "urban-road-monitor-ai"
+version = "0.1.0"
+description = "AI service for Urban Road Monitor: route computation and pothole clustering."
+requires-python = ">=3.13,<3.14"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # import order
+    "N",   # naming conventions
+    "UP",  # modern Python syntax
+    "B",   # likely bugs
+    "SIM", # simpler code
+]
+
+[tool.ruff.format]
+quote-style = "double"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ['(^|/)\.venv/']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
