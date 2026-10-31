@@ -13,6 +13,8 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from app.structures.union_find import UnionFind
+
 
 class GraphError(ValueError):
     """Raised when the graph would receive invalid data."""
@@ -138,6 +140,18 @@ class RoadGraph:
         """Edges that leave a node, in the order they were added."""
         self._check_index(index)
         return tuple(self._adjacency[index])
+
+    def components(self) -> UnionFind:
+        """Group the nodes connected by any street, ignoring one-way rules.
+
+        Two nodes in the same set are joined by some street, but there may be no
+        path that respects the one-way streets: routing still has to check that.
+        """
+        sets = UnionFind(self.node_count)
+        for start, edges in enumerate(self._adjacency):
+            for edge in edges:
+                sets.union(start, edge.target)
+        return sets
 
     def _index_for_segment(self, segment_id: int, node_id: int) -> int:
         index = self._index_of.get(node_id)
