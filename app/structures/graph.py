@@ -33,6 +33,17 @@ class Edge:
     reversed: bool
     """True if the edge goes against the order of the segment geometry."""
 
+    def cost(self, k: float) -> float:
+        """Cost of crossing the edge: length x (1 + k x damage).
+
+        k is the damage factor of the request (0, 1 or 3). With k >= 0 and
+        damage >= 0, the cost is never below the length, which keeps the
+        straight-line heuristic of A* valid.
+        """
+        if not (math.isfinite(k) and k >= 0):
+            raise GraphError(f"the damage factor k must be a number >= 0, got {k}")
+        return self.length_m * (1 + k * self.damage_score)
+
 
 class RoadGraph:
     """Road network of Pasto as a directed graph with an adjacency list."""
