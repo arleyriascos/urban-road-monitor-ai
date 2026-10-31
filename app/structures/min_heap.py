@@ -47,6 +47,13 @@ class IndexedMinHeap:
         self._check_item(item)
         return self._pos[item] != NOT_IN_HEAP
 
+    def priority_of(self, item: int) -> float:
+        """Return the current priority of an item that is in the heap."""
+        self._check_item(item)
+        if self._pos[item] == NOT_IN_HEAP:
+            raise HeapError(f"item {item} is not in the heap")
+        return self._priority[item]
+
     def push(self, item: int, priority: float) -> None:
         """Insert an item that is not in the heap yet."""
         self._check_item(item)
@@ -77,6 +84,20 @@ class IndexedMinHeap:
             self._pos[last] = 0
             self._sift_down(0)
         return top, self._priority[top]
+
+    def decrease_key(self, item: int, priority: float) -> None:
+        """Lower the priority of an item that is in the heap and move it up."""
+        self._check_item(item)
+        self._check_priority(priority)
+        position = self._pos[item]
+        if position == NOT_IN_HEAP:
+            raise HeapError(f"item {item} is not in the heap; use push")
+        if priority > self._priority[item]:
+            raise HeapError(
+                f"new priority {priority} is higher than the current {self._priority[item]}"
+            )
+        self._priority[item] = priority
+        self._sift_up(position)
 
     def _less(self, i: int, j: int) -> bool:
         """Compare the items at positions i and j; ties go to the lower item."""
