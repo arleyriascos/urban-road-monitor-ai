@@ -99,6 +99,23 @@ class IndexedMinHeap:
         self._priority[item] = priority
         self._sift_up(position)
 
+    def is_valid(self) -> bool:
+        """Check the invariants: heap order and positions that match the heap.
+
+        It is O(n), so it is meant for tests and for the presentation, not for routing.
+        """
+        for item, position in enumerate(self._pos):
+            if position != NOT_IN_HEAP and (
+                position >= len(self._heap) or self._heap[position] != item
+            ):
+                return False
+        for position, item in enumerate(self._heap):
+            if self._pos[item] != position:
+                return False
+            if position > 0 and self._less(position, (position - 1) // 2):
+                return False
+        return True
+
     def _less(self, i: int, j: int) -> bool:
         """Compare the items at positions i and j; ties go to the lower item."""
         a, b = self._heap[i], self._heap[j]
