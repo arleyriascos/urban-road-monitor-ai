@@ -1,0 +1,21 @@
+# Render Blueprint: describes the web service so it can be created from this file.
+# Secret values (sync: false) are asked for in the Render dashboard, never stored here.
+services:
+  - type: web
+    name: urban-road-monitor-ai
+    runtime: python
+    region: virginia
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: '3.13.3'
+      - key: APP_ENV
+        value: production
+      - key: BACKEND_URL
+        sync: false
+      - key: INTERNAL_TOKEN
+        sync: false
