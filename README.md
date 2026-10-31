@@ -6,7 +6,7 @@ El servicio no se conecta a la base de datos: el backend le entrega los datos qu
 
 ## Estado
 
-Bloque 1 de la Etapa 2: estructura base del servicio y endpoint de salud. Las estructuras de datos y los algoritmos de ruta llegan en los bloques siguientes.
+Bloque 2 de la Etapa 2: ya están las estructuras base (grafo dirigido, Min-Heap indexado y Union-Find). Los algoritmos de ruta (Dijkstra y A*) llegan en el bloque 3, y el endpoint de rutas en el bloque 5.
 
 ## Requisitos
 
@@ -62,9 +62,30 @@ app/
   main.py          creación de la aplicación FastAPI
   routes/
     health.py      GET /health
+  structures/
+    graph.py       grafo dirigido con lista de adyacencia
+    min_heap.py    Min-Heap indexado con decrease_key
+    union_find.py  Union-Find con compresión de caminos y unión por tamaño
 tests/             pruebas con pytest
+  structures/      ejemplos y comparaciones al azar de cada estructura
 render.yaml        despliegue en Render (plan gratuito, región Virginia)
 ```
+
+## Estructuras de datos
+
+Las tres están escritas a mano en `app/structures/`. Trabajan con índices internos de 0 a n−1: al cargar el grafo, cada nodo de `road_nodes` recibe un índice consecutivo, y los ids de la base solo aparecen al entrar y salir del grafo.
+
+| Estructura | Para qué sirve | Operaciones y complejidad |
+|---|---|---|
+| Grafo dirigido (`RoadGraph`) | Red vial de Pasto. Un tramo de sentido único es una arista y uno de doble sentido son dos. Cada arista guarda el tramo, su longitud, su daño y si recorre el tramo al revés | Agregar nodo o tramo O(1); vecinos de un nodo O(grado) |
+| Min-Heap indexado (`IndexedMinHeap`) | Elegir el siguiente nodo en Dijkstra y A* | `push`, `pop_min` y `decrease_key` O(log n); `contains`, `priority_of` y `peek_min` O(1) |
+| Union-Find (`UnionFind`) | Encontrar la componente principal de la red y descartar pedazos de vía sueltos | `find`, `union` y `connected` O(α(n)) amortizado, casi constante |
+
+El costo de cruzar una arista se calcula en cada consulta como `longitud × (1 + k × daño)`, porque `k` cambia con el criterio de la ruta: 0 para la más corta, 1 para la equilibrada y 3 para evitar baches. Nunca baja de la longitud, lo que mantiene válida la heurística de A*.
+
+El Union-Find ignora el sentido de las calles: dice si dos nodos están unidos por alguna calle, no si hay un camino que respete los sentidos.
+
+Cada estructura se prueba de dos formas: con ejemplos legibles y con cientos de operaciones al azar (semilla fija) comparadas contra una versión simple y lenta. Después de cada operación se verifican sus invariantes con `is_valid()`.
 
 ## Reglas del proyecto
 
