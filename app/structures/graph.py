@@ -7,13 +7,24 @@ ids only appear when data enters or leaves the graph.
 A one-way segment becomes one edge, from its first node to its last node (the
 importer already flips OpenStreetMap ``oneway=-1`` streets). A two-way segment
 becomes two edges with the same length and damage.
+
+The length of a segment is never below the straight-line distance between its
+two nodes. The backend rounds lengths to centimeters, so a straight street can
+come out a few millimeters short; the graph raises it to the straight-line
+distance, and rejects any segment that is shorter by more than a centimeter,
+because that is bad data and not rounding. This keeps the straight-line
+heuristic of A* valid, so A* and Dijkstra always find routes of equal cost.
 """
 
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from app.geo import haversine_m
 from app.structures.union_find import UnionFind
+
+LENGTH_TOLERANCE_M = 0.01
+"""How much shorter than the straight line a segment may be (rounding of lengths)."""
 
 
 class GraphError(ValueError):
@@ -29,7 +40,7 @@ class Edge:
     segment_id: int
     """Id of the segment in ``road_segments``."""
     length_m: float
-    """Length of the segment in meters."""
+    """Length in meters, never below the straight line between the segment's nodes."""
     damage_score: float
     """Damage of the segment, from ``road_segments.damage_score``."""
     reversed: bool
@@ -119,7 +130,10 @@ class RoadGraph:
         damage_score: float,
         is_oneway: bool,
     ) -> None:
-        """Add a road segment as one edge (one-way) or two edges (two-way)."""
+        """Add a road segment as one edge (one-way) or two edges (two-way).
+
+        The stored length is ``max(length_m, straight-line distance)``.
+        """
         if segment_id in self._segment_ids:
             raise GraphError(f"segment {segment_id} was already added")
         if not (math.isfinite(length_m) and length_m >= 0):
@@ -128,6 +142,13 @@ class RoadGraph:
             raise GraphError(f"segment {segment_id} has an invalid damage: {damage_score}")
         start = self._index_for_segment(segment_id, from_node_id)
         end = self._index_for_segment(segment_id, to_node_id)
+        straight_m = haversine_m(*self.coordinates(start), *self.coordinates(end))
+        if length_m < straight_m - LENGTH_TOLERANCE_M:
+            raise GraphError(
+                f"segment {segment_id} is {length_m} m long, but its nodes are "
+                f"{straight_m:.2f} m apart in a straight line"
+            )
+        length_m = max(length_m, straight_m)
 
         self._segment_ids.add(segment_id)
         self._adjacency[start].append(Edge(end, segment_id, length_m, damage_score, False))
