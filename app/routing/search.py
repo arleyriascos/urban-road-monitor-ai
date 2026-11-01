@@ -19,6 +19,7 @@ The cost of crossing an edge is ``length x (1 + k x damage)``.
 import math
 from collections.abc import Callable
 
+from app.geo import haversine_m
 from app.routing.errors import NoRouteError
 from app.routing.result import Algorithm, RouteResult, RouteStep
 from app.structures.graph import Edge, RoadGraph, check_damage_factor
@@ -32,6 +33,18 @@ Heuristic = Callable[[int], float]
 def dijkstra(graph: RoadGraph, source: int, target: int, k: float = 1.0) -> RouteResult:
     """Find the cheapest route from source to target (internal node indexes)."""
     return _search(graph, source, target, k, lambda _node: 0.0, "dijkstra")
+
+
+def a_star(graph: RoadGraph, source: int, target: int, k: float = 1.0) -> RouteResult:
+    """Find the cheapest route from source to target, guided by the straight-line distance."""
+    graph.node_id(source)  # raises GraphError if the index is outside the graph
+    goal_latitude, goal_longitude = graph.coordinates(target)
+
+    def straight_line_to_target(node: int) -> float:
+        latitude, longitude = graph.coordinates(node)
+        return haversine_m(latitude, longitude, goal_latitude, goal_longitude)
+
+    return _search(graph, source, target, k, straight_line_to_target, "a_star")
 
 
 def _search(
