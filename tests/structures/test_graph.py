@@ -33,15 +33,15 @@ def test_a_two_way_segment_creates_edges_in_both_directions(sample_graph: RoadGr
     forward = [edge for edge in sample_graph.neighbors(a) if edge.segment_id == 1001]
     backward = [edge for edge in sample_graph.neighbors(b) if edge.segment_id == 1001]
 
-    assert forward == [Edge(b, 1001, 110.0, 0.0, False)]
-    assert backward == [Edge(a, 1001, 110.0, 0.0, True)]
+    assert forward == [Edge(b, 1001, 112.0, 0.0, False)]
+    assert backward == [Edge(a, 1001, 112.0, 0.0, True)]
 
 
 def test_a_one_way_segment_creates_a_single_edge(sample_graph: RoadGraph) -> None:
     start = sample_graph.index_of(102)
     end = sample_graph.index_of(104)
 
-    assert Edge(end, 1003, 90.0, 0.0, False) in sample_graph.neighbors(start)
+    assert Edge(end, 1003, 101.0, 0.0, False) in sample_graph.neighbors(start)
     assert sample_graph.neighbors(end) == ()
 
 
@@ -98,7 +98,7 @@ def test_rejects_invalid_coordinates(latitude: float, longitude: float) -> None:
 
 def test_rejects_a_repeated_segment(sample_graph: RoadGraph) -> None:
     with pytest.raises(GraphError, match="already added"):
-        sample_graph.add_segment(1001, 101, 102, 110.0, 0.0, False)
+        sample_graph.add_segment(1001, 101, 102, 112.0, 0.0, False)
 
 
 def test_rejects_a_segment_with_an_unknown_node(sample_graph: RoadGraph) -> None:
@@ -110,7 +110,7 @@ def test_rejects_a_segment_with_an_unknown_node(sample_graph: RoadGraph) -> None
 
 @pytest.mark.parametrize(
     ("length_m", "damage_score"),
-    [(-1.0, 0.0), (math.nan, 0.0), (10.0, -0.5), (10.0, math.inf)],
+    [(-1.0, 0.0), (math.nan, 0.0), (300.0, -0.5), (300.0, math.inf)],
 )
 def test_rejects_negative_or_invalid_lengths_and_damage(
     sample_graph: RoadGraph, length_m: float, damage_score: float

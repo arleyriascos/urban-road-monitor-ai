@@ -1,4 +1,6 @@
-"""A small road network written by hand, shared by the graph tests.
+"""Road networks written by hand, shared by the tests of graphs and routes.
+
+Sample network:
 
       104
        ^  Carrera 25 (one-way, north)
@@ -26,12 +28,13 @@ NODES = [
 ]
 
 # (segment_id, from_node_id, to_node_id, length_m, damage_score, is_oneway)
+# Every length is at least the straight-line distance between its nodes.
 SEGMENTS = [
-    (1001, 101, 102, 110.0, 0.0, False),
-    (1002, 102, 103, 110.0, 2.0, False),
-    (1003, 102, 104, 90.0, 0.0, True),
-    (1004, 105, 103, 120.0, 0.5, True),
-    (1005, 201, 202, 15.0, 0.0, False),
+    (1001, 101, 102, 112.0, 0.0, False),
+    (1002, 102, 103, 112.0, 2.0, False),
+    (1003, 102, 104, 101.0, 0.0, True),
+    (1004, 105, 103, 134.0, 0.5, True),
+    (1005, 201, 202, 16.0, 0.0, False),
 ]
 
 
