@@ -31,6 +31,12 @@ class GraphError(ValueError):
     """Raised when the graph would receive invalid data."""
 
 
+def check_damage_factor(k: float) -> None:
+    """Check the damage factor k of a route request: a finite number >= 0."""
+    if not (math.isfinite(k) and k >= 0):
+        raise GraphError(f"the damage factor k must be a number >= 0, got {k}")
+
+
 @dataclass(frozen=True, slots=True)
 class Edge:
     """One direction of a road segment, stored in the list of its start node."""
@@ -53,8 +59,7 @@ class Edge:
         damage >= 0, the cost is never below the length, which keeps the
         straight-line heuristic of A* valid.
         """
-        if not (math.isfinite(k) and k >= 0):
-            raise GraphError(f"the damage factor k must be a number >= 0, got {k}")
+        check_damage_factor(k)
         return self.length_m * (1 + k * self.damage_score)
 
 
