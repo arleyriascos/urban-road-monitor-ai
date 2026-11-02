@@ -9,11 +9,14 @@ importer already flips OpenStreetMap ``oneway=-1`` streets). A two-way segment
 becomes two edges with the same length and damage.
 
 The length of a segment is never below the straight-line distance between its
-two nodes. The backend rounds lengths to centimeters, so a straight street can
-come out a few millimeters short; the graph raises it to the straight-line
-distance, and rejects any segment that is shorter by more than a centimeter,
-because that is bad data and not rounding. This keeps the straight-line
-heuristic of A* valid, so A* and Dijkstra always find routes of equal cost.
+two nodes. The backend importer measures each length with the 7-decimal
+coordinates of OpenStreetMap and rounds it to centimeters, but it stores the
+nodes rounded to 6 decimals. So a straight street can come out up to about
+16 cm shorter than the straight line between its stored nodes. The graph raises
+such a length to the straight-line distance, and rejects any segment that is
+shorter by more than LENGTH_TOLERANCE_M, because that is bad data and not
+rounding. This keeps the straight-line heuristic of A* valid, so A* and Dijkstra
+always find routes of equal cost.
 """
 
 import math
@@ -23,8 +26,13 @@ from dataclasses import dataclass
 from app.geo import haversine_m
 from app.structures.union_find import UnionFind
 
-LENGTH_TOLERANCE_M = 0.01
-"""How much shorter than the straight line a segment may be (rounding of lengths)."""
+LENGTH_TOLERANCE_M = 0.2
+"""How much shorter than the straight line a segment may be because of rounding.
+
+Rounding a coordinate to 6 decimals moves it at most 0.5e-6 degrees (about 5.6 cm),
+so a node moves at most about 8 cm and the two ends of a segment about 16 cm;
+rounding the length to centimeters adds 0.5 cm more. 20 cm covers that with margin.
+"""
 
 
 class GraphError(ValueError):
