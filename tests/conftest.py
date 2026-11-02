@@ -19,6 +19,7 @@ from collections.abc import Callable
 import pytest
 
 from app.geo import haversine_m
+from app.graph.payload import GraphNodeIn, GraphPayload, GraphSegmentIn
 from app.structures.graph import RoadGraph
 
 NODES = [
@@ -50,6 +51,26 @@ def sample_graph() -> RoadGraph:
     for segment in SEGMENTS:
         graph.add_segment(*segment)
     return graph
+
+
+@pytest.fixture
+def sample_payload() -> GraphPayload:
+    """The sample network as GET /internal/graph of the backend sends it."""
+    return GraphPayload(
+        version="sample-v1",
+        nodes=[GraphNodeIn(id=node_id, latitude=lat, longitude=lon) for node_id, lat, lon in NODES],
+        segments=[
+            GraphSegmentIn(
+                id=segment_id,
+                from_node_id=start,
+                to_node_id=end,
+                length_m=length,
+                damage_score=damage,
+                is_oneway=oneway,
+            )
+            for segment_id, start, end, length, damage, oneway in SEGMENTS
+        ],
+    )
 
 
 @pytest.fixture
