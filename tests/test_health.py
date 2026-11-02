@@ -6,7 +6,11 @@ from app.main import create_app
 
 
 def make_client() -> TestClient:
-    settings = Settings(_env_file=None, app_env="test", internal_token="secret-value")
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        internal_token="a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4",
+    )
     return TestClient(create_app(settings))
 
 
@@ -24,7 +28,7 @@ def test_health_reports_the_service_is_running() -> None:
 def test_health_never_exposes_the_token() -> None:
     response = make_client().get("/health")
 
-    assert "secret-value" not in response.text
+    assert "a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4" not in response.text
 
 
 def test_health_is_listed_in_the_api_documentation() -> None:
