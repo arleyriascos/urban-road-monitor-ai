@@ -1,6 +1,6 @@
 """Shape of GET /internal/graph, the road graph the backend sends."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -25,6 +25,25 @@ class GraphSegmentIn(_BackendModel):
     length_m: float
     damage_score: float
     is_oneway: bool
+    geometry: list[tuple[float, float]] | None = Field(default=None, max_length=2000)
+    """The shape of the street as (latitude, longitude) pairs, from its start to its end.
+
+    Optional: a backend that does not send it gets a straight line between the two nodes.
+    """
+
+    @field_validator("geometry")
+    @classmethod
+    def _check_geometry(
+        cls, geometry: list[tuple[float, float]] | None
+    ) -> list[tuple[float, float]] | None:
+        if geometry is None:
+            return None
+        if len(geometry) < 2:
+            raise ValueError("geometry needs at least two points")
+        for latitude, longitude in geometry:
+            if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+                raise ValueError(f"geometry point out of range: ({latitude}, {longitude})")
+        return geometry
 
 
 class GraphPayload(_BackendModel):
