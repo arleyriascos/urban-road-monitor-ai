@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from app.graph.client import GraphDownloadError
 from app.graph.payload import GraphPayload
 from app.routing.locator import NodeLocator
+from app.routing.segment_locator import SegmentLocator
 from app.structures.graph import GraphError, RoadGraph
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,8 @@ class LoadedGraph:
     version: str
     graph: RoadGraph
     locator: NodeLocator
+    segment_locator: SegmentLocator | None
+    """Finds the segment of a place. None when the graph has no segments."""
     loaded_at: datetime
 
     @property
@@ -70,8 +73,23 @@ def build_loaded_graph(payload: GraphPayload, max_snap_distance_m: float) -> Loa
         version=payload.version,
         graph=graph,
         locator=NodeLocator(graph, max_snap_distance_m),
+        segment_locator=_build_segment_locator(payload),
         loaded_at=datetime.now(UTC),
     )
+
+
+def _build_segment_locator(payload: GraphPayload) -> SegmentLocator | None:
+    """Index every street by its shape, or by the straight line between its nodes."""
+    if not payload.segments:
+        return None
+    nodes = {node.id: (node.latitude, node.longitude) for node in payload.nodes}
+    lines: dict[int, list[tuple[float, float]]] = {}
+    for segment in payload.segments:
+        lines[segment.id] = segment.geometry or [
+            nodes[segment.from_node_id],
+            nodes[segment.to_node_id],
+        ]
+    return SegmentLocator(lines)
 
 
 class GraphStore:
