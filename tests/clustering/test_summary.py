@@ -1,9 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.clustering.models import ClusteringError, Detection, Severity
-from app.clustering.summary import centroid, vote_severity
+from app.clustering.summary import centroid, combined_confidence, vote_severity
 
 NOW = datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
 
@@ -14,8 +14,9 @@ def seen(
     severity: Severity = Severity.LEVE,
     confidence: float = 0.8,
     id: int = 1,
+    at: datetime = NOW,
 ) -> Detection:
-    return Detection(id, lat, lon, severity, confidence, NOW)
+    return Detection(id, lat, lon, severity, confidence, at)
 
 
 def test_the_centroid_of_one_detection_is_that_detection() -> None:
@@ -91,3 +92,63 @@ def test_the_order_of_the_detections_does_not_change_the_vote() -> None:
 def test_the_severity_of_no_detections_is_an_error() -> None:
     with pytest.raises(ClusteringError, match="severity"):
         vote_severity([])
+
+
+def test_the_confidence_of_one_fresh_detection_is_its_own() -> None:
+    assert combined_confidence([seen(confidence=0.7)], NOW) == pytest.approx(0.7)
+
+
+def test_each_new_detection_raises_the_confidence() -> None:
+    one = combined_confidence([seen(confidence=0.5)], NOW)
+    two = combined_confidence([seen(confidence=0.5, id=1), seen(confidence=0.5, id=2)], NOW)
+    three = combined_confidence([seen(confidence=0.5, id=i) for i in range(3)], NOW)
+
+    assert one < two < three < 1.0
+    assert two == pytest.approx(0.75)
+    assert three == pytest.approx(0.875)
+
+
+def test_a_sure_detection_makes_the_confidence_one() -> None:
+    assert combined_confidence([seen(confidence=1.0), seen(confidence=0.2, id=2)], NOW) == 1.0
+
+
+def test_a_detection_loses_half_its_weight_after_the_half_life() -> None:
+    old = seen(confidence=0.8, at=NOW - timedelta(days=30))
+
+    assert combined_confidence([old], NOW) == pytest.approx(0.4)
+    assert combined_confidence([old], NOW, half_life_days=15.0) == pytest.approx(0.2)
+
+
+def test_an_old_pothole_fades_but_a_new_sighting_brings_it_back() -> None:
+    old = seen(confidence=0.8, at=NOW - timedelta(days=90), id=1)
+    new = seen(confidence=0.8, at=NOW, id=2)
+
+    assert combined_confidence([old], NOW) < 0.1
+    assert combined_confidence([old, new], NOW) > combined_confidence([new], NOW)
+
+
+def test_a_detection_from_the_future_counts_in_full() -> None:
+    future = seen(confidence=0.6, at=NOW + timedelta(days=5))
+
+    assert combined_confidence([future], NOW) == pytest.approx(0.6)
+
+
+def test_the_confidence_does_not_depend_on_the_order() -> None:
+    detections = [seen(confidence=0.3, at=NOW - timedelta(days=i * 7), id=i) for i in range(1, 6)]
+
+    assert combined_confidence(detections, NOW) == pytest.approx(
+        combined_confidence(detections[::-1], NOW)
+    )
+
+
+@pytest.mark.parametrize("half_life", [0.0, -3.0, float("nan"), float("inf")])
+def test_the_half_life_must_be_a_positive_number_of_days(half_life: float) -> None:
+    with pytest.raises(ClusteringError, match="half_life_days"):
+        combined_confidence([seen()], NOW, half_life_days=half_life)
+
+
+def test_the_confidence_needs_detections_and_a_time_zone() -> None:
+    with pytest.raises(ClusteringError, match="confidence"):
+        combined_confidence([], NOW)
+    with pytest.raises(ClusteringError, match="as_of"):
+        combined_confidence([seen()], datetime(2026, 11, 16))
