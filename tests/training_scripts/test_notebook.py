@@ -42,3 +42,11 @@ def test_every_module_the_notebook_runs_exists() -> None:
 def test_notebook_has_no_keys_or_tokens() -> None:
     text = NOTEBOOK.read_text(encoding="utf-8")
     assert not re.search(r"api[_-]?key\s*=|ghp_|github_pat_|AIza|token\s*=", text, re.IGNORECASE)
+
+
+def test_datasets_are_unzipped_with_python_not_with_a_shell_loop() -> None:
+    # A "!for" line did not expand {DATASETS_DIR}: the zips were never found.
+    text = _code_text()
+    assert "!for" not in text
+    assert "zipfile.ZipFile" in text
+    assert "DATASETS_DIR.glob" in text
