@@ -1,6 +1,8 @@
 """Geographic helpers shared by the graph, the search and the click locator."""
 
+import itertools
 import math
+from collections.abc import Sequence
 from typing import NamedTuple
 
 EARTH_RADIUS_M = 6_371_008.8
@@ -130,3 +132,35 @@ def project_on_segment(
     return SegmentProjection(
         near_lat, near_lon, fraction, haversine_m(latitude, longitude, near_lat, near_lon)
     )
+
+
+def project_on_polyline(
+    latitude: float, longitude: float, points: Sequence[tuple[float, float]]
+) -> SegmentProjection:
+    """Find the point of a line made of several straight pieces that is closest to a place.
+
+    ``fraction`` in the result is measured along the whole line, by length: 0 at the first
+    point and 1 at the last. On a tie the earlier piece wins. A line of one point is a
+    point; an empty line has no closest point and is an error.
+    """
+    if not points:
+        raise ValueError("a polyline needs at least one point")
+    if len(points) == 1:
+        only = points[0]
+        return SegmentProjection(
+            only[0], only[1], 0.0, haversine_m(latitude, longitude, only[0], only[1])
+        )
+    lengths = [haversine_m(*a, *b) for a, b in itertools.pairwise(points)]
+    total = math.fsum(lengths)
+    best: SegmentProjection | None = None
+    best_travelled = 0.0
+    travelled = 0.0
+    for (start, end), length in zip(itertools.pairwise(points), lengths, strict=True):
+        found = project_on_segment(latitude, longitude, start, end)
+        if best is None or found.distance_m < best.distance_m:
+            best = found
+            best_travelled = travelled + found.fraction * length
+        travelled += length
+    assert best is not None
+    fraction = best_travelled / total if total > 0 else 0.0
+    return SegmentProjection(best.latitude, best.longitude, fraction, best.distance_m)

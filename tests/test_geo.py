@@ -8,6 +8,7 @@ from app.geo import (
     bounding_box,
     haversine_m,
     min_distance_to_box_m,
+    project_on_polyline,
     project_on_segment,
 )
 
@@ -204,3 +205,46 @@ class TestProjectOnSegment:
                 t = i / 100
                 other = haversine_m(lat, lon, 1.2136, -77.2811 + t * 0.0010)
                 assert result.distance_m <= other + 0.01
+
+
+class TestProjectOnPolyline:
+    # An "L": 111 m east, then 111 m north.
+    L_SHAPE = [(1.2136, -77.2811), (1.2136, -77.2801), (1.2146, -77.2801)]
+
+    def test_a_place_near_the_second_piece_projects_onto_it(self) -> None:
+        result = project_on_polyline(1.2141, -77.2799, self.L_SHAPE)
+
+        assert result.longitude == pytest.approx(-77.2801)
+        assert result.latitude == pytest.approx(1.2141, abs=1e-6)
+        assert result.fraction == pytest.approx(0.75, abs=0.01)
+
+    def test_the_fraction_is_measured_along_the_whole_line(self) -> None:
+        start = project_on_polyline(1.2136, -77.2811, self.L_SHAPE)
+        corner = project_on_polyline(1.2130, -77.2801, self.L_SHAPE)
+        end = project_on_polyline(1.2150, -77.2801, self.L_SHAPE)
+
+        assert start.fraction == 0.0
+        assert corner.fraction == pytest.approx(0.5, abs=0.01)
+        assert end.fraction == 1.0
+
+    def test_it_matches_a_search_over_many_samples_of_the_line(self) -> None:
+        rng = random.Random(22)
+        for _ in range(100):
+            lat = 1.2141 + rng.uniform(-0.001, 0.001)
+            lon = -77.2806 + rng.uniform(-0.001, 0.001)
+            result = project_on_polyline(lat, lon, self.L_SHAPE)
+            samples = [(1.2136, -77.2811 + i * 0.00001) for i in range(101)]
+            samples += [(1.2136 + i * 0.00001, -77.2801) for i in range(101)]
+            best = min(haversine_m(lat, lon, *p) for p in samples)
+            assert result.distance_m <= best + 0.01
+            assert result.distance_m >= best - 1.5
+
+    def test_a_line_of_one_point_is_that_point(self) -> None:
+        result = project_on_polyline(1.2140, -77.2811, [(1.2136, -77.2811)])
+
+        assert result.fraction == 0.0
+        assert result.distance_m == pytest.approx(haversine_m(1.2140, -77.2811, 1.2136, -77.2811))
+
+    def test_a_line_without_points_is_an_error(self) -> None:
+        with pytest.raises(ValueError, match="at least one point"):
+            project_on_polyline(1.0, 1.0, [])
