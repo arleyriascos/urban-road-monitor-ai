@@ -1,0 +1,9 @@
+# Dependencies to train and export the pothole model, on Google Colab or on a computer with a GPU.
+# They are NOT used by the service on Render: that one only needs ../requirements.txt.
+#
+# Install with: python -m pip install -r training/requirements.txt
+#
+# Exact version, published more than 14 days ago. 8.4.82 is the last release that can still
+# export to TensorFlow.js: 8.4.83 and later replaced that format with LiteRT. Exporting to
+# ONNX works in every release.
+ultralytics==8.4.82

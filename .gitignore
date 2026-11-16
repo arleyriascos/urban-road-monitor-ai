@@ -25,3 +25,11 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Model training: datasets, runs, weights and exported models stay out of Git
+training/data/
+training/runs/
+training/work/
+*.pt
+*.onnx
+*_web_model/
