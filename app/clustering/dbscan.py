@@ -22,30 +22,19 @@ from collections import deque
 from collections.abc import Sequence
 
 from app.clustering.models import ClusteringError
-from app.structures.quadtree import Quadtree
+from app.structures.quadtree import Quadtree, bounds_around
 
 NOISE = -1
 """The label of a point that belongs to no cluster."""
 
 _UNVISITED = -2
 
-_PADDING_DEGREES = 1e-6
-"""Margin around the points, so even a single point gives the Quadtree an area."""
-
 Point = tuple[float, float]
 """A (latitude, longitude) pair in degrees."""
 
 
 def _tree_around(points: Sequence[Point]) -> Quadtree[int]:
-    latitudes = [lat for lat, _ in points]
-    longitudes = [lon for _, lon in points]
-    bounds = (
-        max(-90.0, min(latitudes) - _PADDING_DEGREES),
-        max(-180.0, min(longitudes) - _PADDING_DEGREES),
-        min(90.0, max(latitudes) + _PADDING_DEGREES),
-        min(180.0, max(longitudes) + _PADDING_DEGREES),
-    )
-    tree: Quadtree[int] = Quadtree(bounds)
+    tree: Quadtree[int] = Quadtree(bounds_around(points))
     for index, (latitude, longitude) in enumerate(points):
         tree.insert(latitude, longitude, index)
     return tree

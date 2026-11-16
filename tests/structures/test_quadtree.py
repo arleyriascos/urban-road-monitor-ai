@@ -4,7 +4,7 @@ import random
 import pytest
 
 from app.geo import haversine_m
-from app.structures.quadtree import Quadtree, QuadtreeError
+from app.structures.quadtree import Quadtree, QuadtreeError, bounds_around
 
 Point = tuple[float, float]
 
@@ -323,3 +323,27 @@ def test_nearest_in_a_big_tree_is_close_to_the_place() -> None:
 
     assert match is not None
     assert match.distance_m < 100
+
+
+def test_bounds_around_wrap_the_points_with_a_small_margin() -> None:
+    south, west, north, east = bounds_around([(1.2, -77.3), (1.3, -77.2)])
+
+    assert south < 1.2 < 1.3 < north
+    assert west < -77.3 < -77.2 < east
+    assert north - 1.3 < 1e-5
+
+
+def test_bounds_around_one_point_still_have_an_area() -> None:
+    south, west, north, east = bounds_around([(1.2, -77.3)])
+
+    assert south < north
+    assert west < east
+
+
+def test_bounds_around_never_leave_the_world() -> None:
+    assert bounds_around([(90.0, 180.0), (-90.0, -180.0)]) == (-90.0, -180.0, 90.0, 180.0)
+
+
+def test_bounds_around_no_points_are_an_error() -> None:
+    with pytest.raises(QuadtreeError, match="empty"):
+        bounds_around([])

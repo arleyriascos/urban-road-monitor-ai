@@ -16,11 +16,36 @@ the antimeridian is not supported. Pasto is far from it.
 """
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from app.geo import BoundingBox, bounding_box, haversine_m, min_distance_to_box_m
 
 WORLD: BoundingBox = (-90.0, -180.0, 90.0, 180.0)
+
+_PADDING_DEGREES = 1e-6
+"""Margin around a set of points, so even a single point gives the tree an area."""
+
+
+def bounds_around(points: Sequence[tuple[float, float]]) -> BoundingBox:
+    """The smallest rectangle that holds every (latitude, longitude) point, with a margin.
+
+    Points on the edge of a Quadtree are accepted, but the margin keeps them off the
+    edge anyway, and keeps the rectangle from being flat when all points are the same.
+    The rectangle never goes beyond the world.
+    """
+    if not points:
+        raise QuadtreeError("cannot wrap an empty list of points")
+    latitudes = [lat for lat, _ in points]
+    longitudes = [lon for _, lon in points]
+    return (
+        max(-90.0, min(latitudes) - _PADDING_DEGREES),
+        max(-180.0, min(longitudes) - _PADDING_DEGREES),
+        min(90.0, max(latitudes) + _PADDING_DEGREES),
+        min(180.0, max(longitudes) + _PADDING_DEGREES),
+    )
+
+
 """The default area of a Quadtree: the whole Earth."""
 
 DEFAULT_CAPACITY = 8
