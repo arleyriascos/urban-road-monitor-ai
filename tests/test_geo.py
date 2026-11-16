@@ -3,7 +3,13 @@ import random
 
 import pytest
 
-from app.geo import EARTH_RADIUS_M, bounding_box, haversine_m, min_distance_to_box_m
+from app.geo import (
+    EARTH_RADIUS_M,
+    bounding_box,
+    haversine_m,
+    min_distance_to_box_m,
+    project_on_segment,
+)
 
 # Values calculated with the backend's own haversineDistance (src/osm/geo.ts),
 # to make sure both services measure distances the same way.
@@ -141,3 +147,60 @@ def test_distance_to_a_box_is_close_to_the_real_distance_for_a_small_box() -> No
 
     assert min_distance_to_box_m(1.2145, -77.2815, box) <= corner_distance
     assert min_distance_to_box_m(1.2145, -77.2815, box) > 0.9 * corner_distance
+
+
+class TestProjectOnSegment:
+    START = (1.2136, -77.2811)
+    END = (1.2136, -77.2801)  # about 111 m to the east
+
+    def test_a_place_beside_the_middle_projects_onto_the_middle(self) -> None:
+        result = project_on_segment(1.21370, -77.2806, self.START, self.END)
+
+        assert result.fraction == pytest.approx(0.5, abs=1e-3)
+        assert result.latitude == pytest.approx(1.2136)
+        assert result.distance_m == pytest.approx(
+            haversine_m(1.2137, -77.2806, 1.2136, -77.2806), rel=1e-3
+        )
+
+    def test_a_place_past_the_end_projects_onto_the_end(self) -> None:
+        result = project_on_segment(1.2136, -77.2790, self.START, self.END)
+
+        assert result.fraction == 1.0
+        assert (result.latitude, result.longitude) == pytest.approx(self.END)
+        assert result.distance_m == pytest.approx(haversine_m(1.2136, -77.2790, *self.END))
+
+    def test_a_place_before_the_start_projects_onto_the_start(self) -> None:
+        result = project_on_segment(1.2136, -77.2820, self.START, self.END)
+
+        assert result.fraction == 0.0
+        assert (result.latitude, result.longitude) == pytest.approx(self.START)
+
+    def test_a_place_on_the_segment_is_at_distance_zero(self) -> None:
+        result = project_on_segment(1.2136, -77.2806, self.START, self.END)
+
+        assert result.distance_m == pytest.approx(0.0, abs=1e-6)
+
+    def test_a_segment_that_is_a_single_point_gives_that_point(self) -> None:
+        result = project_on_segment(1.2140, -77.2811, self.START, self.START)
+
+        assert result.fraction == 0.0
+        assert result.distance_m == pytest.approx(haversine_m(1.2140, -77.2811, *self.START))
+
+    def test_the_segment_can_cross_the_180_degree_line(self) -> None:
+        result = project_on_segment(0.0001, 179.9999, (0.0, 179.999), (0.0, -179.999))
+
+        assert 0.0 < result.fraction < 1.0
+        assert result.distance_m == pytest.approx(
+            haversine_m(0.0001, 179.9999, 0.0, 179.9999), rel=1e-2
+        )
+
+    def test_no_point_of_the_segment_is_closer_than_the_projection(self) -> None:
+        rng = random.Random(21)
+        for _ in range(200):
+            lat = 1.2136 + rng.uniform(-0.0005, 0.0005)
+            lon = -77.2806 + rng.uniform(-0.0008, 0.0008)
+            result = project_on_segment(lat, lon, self.START, self.END)
+            for i in range(0, 101):
+                t = i / 100
+                other = haversine_m(lat, lon, 1.2136, -77.2811 + t * 0.0010)
+                assert result.distance_m <= other + 0.01

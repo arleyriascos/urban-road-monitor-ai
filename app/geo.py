@@ -1,6 +1,7 @@
 """Geographic helpers shared by the graph, the search and the click locator."""
 
 import math
+from typing import NamedTuple
 
 EARTH_RADIUS_M = 6_371_008.8
 """Mean Earth radius in meters. It is the same value the backend uses, so both
@@ -76,3 +77,56 @@ def min_distance_to_box_m(latitude: float, longitude: float, box: BoundingBox) -
         * math.sin(math.radians(gap_lon) / 2) ** 2
     )
     return 2 * EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(h)))
+
+
+class SegmentProjection(NamedTuple):
+    """The point of a segment that is closest to a place."""
+
+    latitude: float
+    longitude: float
+    fraction: float
+    """Where it falls along the segment: 0 at the start, 1 at the end."""
+    distance_m: float
+    """Distance from the place to that point."""
+
+
+def project_on_segment(
+    latitude: float,
+    longitude: float,
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> SegmentProjection:
+    """Find the point of the segment start-end that is closest to a place.
+
+    A segment is short (tens of meters up to a few hundred), so the surroundings of the
+    place are flattened onto a plane measured in meters: east-west degrees are shrunk by
+    the cosine of the latitude. On that plane the closest point is found with a dot
+    product and kept between the two ends. The distance returned is the real one, from
+    the haversine formula, to the point found.
+    """
+    cos_lat = math.cos(math.radians(latitude))
+
+    def east_north(lat: float, lon: float) -> tuple[float, float]:
+        delta_lon = (lon - longitude + 180.0) % 360.0 - 180.0
+        return (
+            math.radians(delta_lon) * cos_lat * EARTH_RADIUS_M,
+            math.radians(lat - latitude) * EARTH_RADIUS_M,
+        )
+
+    start_x, start_y = east_north(*start)
+    end_x, end_y = east_north(*end)
+    run_x = end_x - start_x
+    run_y = end_y - start_y
+    length_sq = run_x * run_x + run_y * run_y
+    if length_sq == 0.0:
+        fraction = 0.0
+    else:
+        # The place is the origin, so the vector from the start to it is (-start_x, -start_y).
+        fraction = (-start_x * run_x - start_y * run_y) / length_sq
+        fraction = min(1.0, max(0.0, fraction))
+    near_lat = start[0] + fraction * (end[0] - start[0])
+    delta_lon = (end[1] - start[1] + 180.0) % 360.0 - 180.0
+    near_lon = (start[1] + fraction * delta_lon + 180.0) % 360.0 - 180.0
+    return SegmentProjection(
+        near_lat, near_lon, fraction, haversine_m(latitude, longitude, near_lat, near_lon)
+    )
