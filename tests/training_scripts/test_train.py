@@ -17,6 +17,12 @@ def test_default_arguments_follow_the_project_decisions() -> None:
     assert "device" not in arguments
 
 
+def test_the_output_folder_is_absolute_so_ultralytics_does_not_move_it() -> None:
+    arguments = train_arguments(TrainSettings(data=Path("data.yaml")))
+    assert Path(arguments["project"]).is_absolute()
+    assert Path(arguments["project"]) == Path("training/runs").resolve()
+
+
 def test_device_is_passed_only_when_given() -> None:
     arguments = train_arguments(TrainSettings(data=Path("data.yaml"), device="0"))
     assert arguments["device"] == "0"

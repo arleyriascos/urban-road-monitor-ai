@@ -34,7 +34,11 @@ class TrainSettings:
 
 
 def train_arguments(settings: TrainSettings) -> dict[str, Any]:
-    """The keyword arguments for ``YOLO.train``."""
+    """The keyword arguments for ``YOLO.train``.
+
+    The output folder is passed as an absolute path: with a relative one Ultralytics adds
+    ``runs/detect/`` in front, and the weights end up where the other scripts do not look.
+    """
     if settings.epochs < 1:
         raise ValueError("epochs debe ser al menos 1")
     if settings.image_size < 32 or settings.image_size % 32:
@@ -46,7 +50,7 @@ def train_arguments(settings: TrainSettings) -> dict[str, Any]:
         "batch": settings.batch,
         "seed": settings.seed,
         "patience": settings.patience,
-        "project": str(settings.project),
+        "project": str(settings.project.resolve()),
         "name": settings.name,
         "exist_ok": False,
         "single_cls": True,
