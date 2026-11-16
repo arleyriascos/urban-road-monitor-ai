@@ -112,7 +112,8 @@ def format_result(result: PrepareResult) -> str:
 def _read_potholes(item: _Item, class_map: dict[int, int]) -> list[str]:
     if not item.label.is_file():
         return []
-    boxes = remap_boxes(parse_label_text(item.label.read_text(encoding="utf-8")), class_map)
+    text = item.label.read_text(encoding="utf-8")
+    boxes = remap_boxes(parse_label_text(text, polygons_as_boxes=True), class_map)
     return [format_label_text([box]).strip() for box in boxes]
 
 

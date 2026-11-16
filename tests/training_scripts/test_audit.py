@@ -133,3 +133,13 @@ def test_list_images_ignores_other_files_and_label_path_matches(tmp_path: Path) 
     images = list_images(source / "train")
     assert len(images) == 5
     assert label_path_for(images[0]) == source / "train" / "labels" / f"{images[0].stem}.txt"
+
+
+def test_polygons_are_accepted_as_boxes_with_a_warning(tmp_path: Path) -> None:
+    source = make_source(tmp_path / "potholes")
+    write_image(source / "valid", "poly.jpg", "0 0.1 0.1 0.3 0.1 0.2 0.4\n")
+    report = audit_source(source)
+    assert report.ok
+    assert report.splits["valid"].polygon_lines == 1
+    assert report.splits["valid"].boxes == 1
+    assert any("polígonos" in warning for warning in report.warnings)

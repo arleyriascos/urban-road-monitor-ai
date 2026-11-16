@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from training.classes import ClassNamesError, read_class_names, read_license
-from training.labels import LabelError, parse_label_text
+from training.labels import LabelError, count_polygon_lines, parse_label_text
 from training.remap import NoPotholeClassError, build_class_map, remap_boxes
 
 IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".webp"})
@@ -33,6 +33,7 @@ class SplitStats:
     boxes: int = 0
     missing_label_files: int = 0
     labels_without_image: int = 0
+    polygon_lines: int = 0
 
 
 @dataclass(slots=True)
@@ -106,6 +107,10 @@ def audit_source(root: Path) -> AuditReport:
                 f"{name}: {stats.missing_label_files} imágenes sin archivo de etiquetas "
                 "(se tratan como fondo)"
             )
+        if stats.polygon_lines:
+            report.warnings.append(
+                f"{name}: {stats.polygon_lines} líneas son polígonos y se convierten en cajas"
+            )
         if stats.labels_without_image:
             report.warnings.append(
                 f"{name}: {stats.labels_without_image} archivos de etiquetas sin imagen "
@@ -166,7 +171,9 @@ def _audit_split(
             stats.background += 1
             continue
         try:
-            boxes = parse_label_text(label.read_text(encoding="utf-8"))
+            label_text = label.read_text(encoding="utf-8")
+            boxes = parse_label_text(label_text, polygons_as_boxes=True)
+            stats.polygon_lines += count_polygon_lines(label_text)
         except LabelError as error:
             report.problems.append(f"{label.relative_to(root).as_posix()}: {error}")
             continue

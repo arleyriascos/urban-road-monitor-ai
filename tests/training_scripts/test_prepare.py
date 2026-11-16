@@ -157,3 +157,11 @@ def test_command_line_returns_one_on_problems(
 
 def test_box_constant_is_a_valid_label() -> None:
     assert POTHOLE_BOX.startswith("0 ")
+
+
+def test_polygon_labels_are_written_as_boxes(tmp_path: Path) -> None:
+    source = make_source(tmp_path / "potholes")
+    write_image(source / "valid", "poly_jpg.rf.1.jpg", "0 0.2 0.3 0.6 0.3 0.4 0.7\n")
+    prepare_dataset([source], tmp_path / "out")
+    text = (tmp_path / "out" / "labels").rglob("potholes__poly_jpg.rf.1.txt")
+    assert next(text).read_text(encoding="utf-8") == "0 0.400000 0.500000 0.400000 0.400000\n"
