@@ -139,6 +139,31 @@ class Quadtree[T]:
             # All points may have fallen in one quarter; keep splitting that one.
             node = max(node.children, key=lambda child: len(child.points))
 
+    def query_box(self, box: BoundingBox) -> list[QuadHit[T]]:
+        """Every point inside the rectangle, edges included, in tree order."""
+        min_lat, min_lon, max_lat, max_lon = box
+        found: list[QuadHit[T]] = []
+        pending = [self._root]
+        while pending:
+            node = pending.pop()
+            n_min_lat, n_min_lon, n_max_lat, n_max_lon = node.box
+            if (
+                n_max_lat < min_lat
+                or n_min_lat > max_lat
+                or n_max_lon < min_lon
+                or n_min_lon > max_lon
+            ):
+                continue
+            if node.children is not None:
+                pending.extend(node.children)
+                continue
+            found.extend(
+                QuadHit(latitude, longitude, value, order)
+                for latitude, longitude, order, value in node.points
+                if min_lat <= latitude <= max_lat and min_lon <= longitude <= max_lon
+            )
+        return found
+
     def stats(self) -> QuadStats:
         """Count the nodes and find the deepest level."""
         nodes = leaves = deepest = 0

@@ -5,6 +5,8 @@ import pytest
 
 from app.structures.quadtree import Quadtree, QuadtreeError
 
+Point = tuple[float, float]
+
 PASTO = (1.15, -77.35, 1.27, -77.22)
 
 
@@ -99,3 +101,84 @@ def test_invalid_settings_are_rejected() -> None:
         Quadtree(PASTO, capacity=0)
     with pytest.raises(QuadtreeError, match="max_depth"):
         Quadtree(PASTO, max_depth=-1)
+
+
+def _random_points(count: int, seed: int) -> list[Point]:
+    rng = random.Random(seed)
+    return [(rng.uniform(1.15, 1.27), rng.uniform(-77.35, -77.22)) for _ in range(count)]
+
+
+def test_query_box_finds_the_points_inside_and_only_those() -> None:
+    points = _random_points(500, seed=5)
+    tree: Quadtree[int] = Quadtree(PASTO, capacity=4)
+    for i, (latitude, longitude) in enumerate(points):
+        tree.insert(latitude, longitude, i)
+
+    box = (1.19, -77.30, 1.22, -77.27)
+    found = {hit.value for hit in tree.query_box(box)}
+
+    expected = {
+        i
+        for i, (lat, lon) in enumerate(points)
+        if box[0] <= lat <= box[2] and box[1] <= lon <= box[3]
+    }
+    assert found == expected
+    assert 0 < len(found) < 500
+
+
+def test_query_box_matches_a_plain_search_for_many_random_boxes() -> None:
+    points = _random_points(1_000, seed=6)
+    tree: Quadtree[int] = Quadtree(PASTO)
+    for i, (latitude, longitude) in enumerate(points):
+        tree.insert(latitude, longitude, i)
+    rng = random.Random(7)
+
+    for _ in range(200):
+        lat = rng.uniform(1.14, 1.28)
+        lon = rng.uniform(-77.36, -77.21)
+        box = (lat, lon, lat + rng.uniform(0, 0.05), lon + rng.uniform(0, 0.05))
+        found = sorted(hit.value for hit in tree.query_box(box))
+        expected = [
+            i
+            for i, (la, lo) in enumerate(points)
+            if box[0] <= la <= box[2] and box[1] <= lo <= box[3]
+        ]
+        assert found == expected
+
+
+def test_query_box_includes_the_points_on_its_edges() -> None:
+    tree: Quadtree[str] = Quadtree(PASTO)
+    tree.insert(1.20, -77.30, "corner")
+    tree.insert(1.21, -77.30, "edge")
+
+    found = {hit.value for hit in tree.query_box((1.20, -77.30, 1.21, -77.29))}
+
+    assert found == {"corner", "edge"}
+
+
+def test_query_box_returns_the_point_data_and_the_order_of_insertion() -> None:
+    tree: Quadtree[str] = Quadtree(PASTO)
+    tree.insert(1.2136, -77.2811, "first")
+    tree.insert(1.2150, -77.2790, "second")
+
+    hits = sorted(tree.query_box(PASTO), key=lambda hit: hit.order)
+
+    assert [(h.latitude, h.longitude, h.value, h.order) for h in hits] == [
+        (1.2136, -77.2811, "first", 0),
+        (1.2150, -77.2790, "second", 1),
+    ]
+
+
+def test_query_box_of_an_empty_tree_or_far_away_finds_nothing() -> None:
+    tree: Quadtree[int] = Quadtree(PASTO)
+    assert tree.query_box(PASTO) == []
+    tree.insert(1.2, -77.3, 0)
+    assert tree.query_box((1.25, -77.25, 1.26, -77.24)) == []
+
+
+def test_query_box_finds_every_point_stacked_at_the_same_spot() -> None:
+    tree: Quadtree[int] = Quadtree(PASTO, capacity=2, max_depth=5)
+    for i in range(30):
+        tree.insert(1.2136, -77.2811, i)
+
+    assert len(tree.query_box((1.2136, -77.2811, 1.2136, -77.2811))) == 30
