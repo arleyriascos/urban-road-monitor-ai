@@ -240,3 +240,86 @@ def test_query_radius_around_a_place_outside_the_bounds_still_works() -> None:
     tree.insert(1.15, -77.35, 0)
 
     assert len(tree.query_radius(1.1499, -77.3501, 100.0)) == 1
+
+
+def test_nearest_of_an_empty_tree_is_none() -> None:
+    tree: Quadtree[int] = Quadtree(PASTO)
+
+    assert tree.nearest(1.2, -77.3) is None
+
+
+def test_nearest_gives_the_closest_point_and_its_distance() -> None:
+    tree: Quadtree[str] = Quadtree(PASTO)
+    tree.insert(1.2136, -77.2811, "near")
+    tree.insert(1.2200, -77.2700, "far")
+
+    match = tree.nearest(1.2137, -77.2811)
+
+    assert match is not None
+    assert match.hit.value == "near"
+    assert match.distance_m == pytest.approx(haversine_m(1.2137, -77.2811, 1.2136, -77.2811))
+
+
+def test_nearest_respects_the_maximum_distance() -> None:
+    tree: Quadtree[str] = Quadtree(PASTO)
+    tree.insert(1.2136, -77.2811, "a")
+
+    assert tree.nearest(1.2137, -77.2811, max_distance_m=5.0) is None
+    assert tree.nearest(1.2137, -77.2811, max_distance_m=20.0) is not None
+
+
+def test_nearest_of_two_equally_close_points_is_the_first_inserted() -> None:
+    tree: Quadtree[str] = Quadtree(PASTO, capacity=1)
+    tree.insert(1.2140, -77.2811, "first")
+    tree.insert(1.2140, -77.2811, "second")
+    tree.insert(1.2200, -77.2700, "other")
+
+    match = tree.nearest(1.2141, -77.2811)
+
+    assert match is not None
+    assert match.hit.value == "first"
+
+
+def test_nearest_matches_a_plain_search_for_many_random_places() -> None:
+    points = _random_points(1_500, seed=12)
+    # Repeated points make ties, which the tree must settle the same way as the plain search.
+    points += points[:50]
+    tree: Quadtree[int] = Quadtree(PASTO, capacity=4)
+    for i, (latitude, longitude) in enumerate(points):
+        tree.insert(latitude, longitude, i)
+    rng = random.Random(13)
+
+    for _ in range(300):
+        lat = rng.uniform(1.14, 1.28)
+        lon = rng.uniform(-77.36, -77.21)
+        limit = rng.choice([math.inf, 50.0, 500.0])
+        expected = min(
+            ((haversine_m(lat, lon, la, lo), i) for i, (la, lo) in enumerate(points)),
+        )
+        match = tree.nearest(lat, lon, limit)
+        if expected[0] > limit:
+            assert match is None
+        else:
+            assert match is not None
+            assert (match.distance_m, match.hit.order) == expected
+
+
+def test_nearest_rejects_a_maximum_distance_that_is_not_a_distance() -> None:
+    tree: Quadtree[int] = Quadtree(PASTO)
+
+    with pytest.raises(QuadtreeError, match="max_distance_m"):
+        tree.nearest(1.2, -77.3, -1.0)
+    with pytest.raises(QuadtreeError, match="max_distance_m"):
+        tree.nearest(1.2, -77.3, math.nan)
+
+
+def test_nearest_in_a_big_tree_is_close_to_the_place() -> None:
+    points = _random_points(20_000, seed=14)
+    tree: Quadtree[int] = Quadtree(PASTO)
+    for i, (latitude, longitude) in enumerate(points):
+        tree.insert(latitude, longitude, i)
+
+    match = tree.nearest(1.2136, -77.2811)
+
+    assert match is not None
+    assert match.distance_m < 100

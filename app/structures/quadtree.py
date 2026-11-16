@@ -18,7 +18,7 @@ the antimeridian is not supported. Pasto is far from it.
 import math
 from dataclasses import dataclass
 
-from app.geo import BoundingBox, bounding_box, haversine_m
+from app.geo import BoundingBox, bounding_box, haversine_m, min_distance_to_box_m
 
 WORLD: BoundingBox = (-90.0, -180.0, 90.0, 180.0)
 """The default area of a Quadtree: the whole Earth."""
@@ -188,6 +188,48 @@ class Quadtree[T]:
             if distance <= radius_m:
                 matches.append(QuadMatch(hit, distance))
         return matches
+
+    def nearest(
+        self, latitude: float, longitude: float, max_distance_m: float = math.inf
+    ) -> QuadMatch[T] | None:
+        """The stored point closest to a place, or None if none is within max_distance_m.
+
+        If two points are equally close, the one inserted first wins, so the answer does
+        not depend on how the tree happens to be split. The search enters the quarter
+        nearest to the place first and skips every quarter that is already farther than
+        the best point found.
+        """
+        if math.isnan(max_distance_m) or max_distance_m < 0:
+            raise QuadtreeError(f"max_distance_m must be a number >= 0, got {max_distance_m}")
+        best: QuadMatch[T] | None = None
+
+        def visit(node: _Node[T]) -> None:
+            nonlocal best
+            if node.children is None:
+                for point_lat, point_lon, order, value in node.points:
+                    distance = haversine_m(latitude, longitude, point_lat, point_lon)
+                    if distance > max_distance_m:
+                        continue
+                    if (
+                        best is None
+                        or distance < best.distance_m
+                        or (distance == best.distance_m and order < best.hit.order)
+                    ):
+                        best = QuadMatch(QuadHit(point_lat, point_lon, value, order), distance)
+                return
+            ranked = sorted(
+                (min_distance_to_box_m(latitude, longitude, child.box), index)
+                for index, child in enumerate(node.children)
+            )
+            for bound, index in ranked:
+                limit = max_distance_m if best is None else min(max_distance_m, best.distance_m)
+                # A small margin, so a rounding error never hides a point that ties the best.
+                if bound > limit * (1 + 1e-9) + 1e-9:
+                    break
+                visit(node.children[index])
+
+        visit(self._root)
+        return best
 
     def stats(self) -> QuadStats:
         """Count the nodes and find the deepest level."""
