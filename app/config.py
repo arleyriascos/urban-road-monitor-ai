@@ -41,6 +41,21 @@ class Settings(BaseSettings):
     max_snap_distance_m: float = Field(default=200.0, gt=0, allow_inf_nan=False)
     """How far, in meters, a clicked point may be from the road network."""
 
+    cluster_eps_m: float = Field(default=5.0, gt=0, le=1000, allow_inf_nan=False)
+    """Detections closer than this many meters are taken as the same pothole."""
+
+    cluster_min_points: int = Field(default=2, ge=1, le=100)
+    """Detections needed, itself included, to confirm a pothole."""
+
+    cluster_half_life_days: float = Field(default=30.0, gt=0, le=3650, allow_inf_nan=False)
+    """Days after which a detection counts half as much for the confidence."""
+
+    cluster_max_segment_distance_m: float = Field(default=25.0, gt=0, le=1000, allow_inf_nan=False)
+    """How far from a street a pothole may be and still be placed on it."""
+
+    cluster_max_detections: int = Field(default=20_000, ge=1, le=1_000_000)
+    """The most detections one POST /clusters request may carry."""
+
     @field_validator("internal_token", mode="before")
     @classmethod
     def _empty_token_means_not_configured(cls, value: object) -> object:

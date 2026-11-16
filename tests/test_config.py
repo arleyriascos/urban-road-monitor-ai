@@ -8,7 +8,17 @@ TOKEN = "0123456789abcdef" * 4
 
 @pytest.fixture(autouse=True)
 def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("APP_ENV", "BACKEND_URL", "INTERNAL_TOKEN", "MAX_SNAP_DISTANCE_M"):
+    for name in (
+        "APP_ENV",
+        "BACKEND_URL",
+        "INTERNAL_TOKEN",
+        "MAX_SNAP_DISTANCE_M",
+        "CLUSTER_EPS_M",
+        "CLUSTER_MIN_POINTS",
+        "CLUSTER_HALF_LIFE_DAYS",
+        "CLUSTER_MAX_SEGMENT_DISTANCE_M",
+        "CLUSTER_MAX_DETECTIONS",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -153,3 +163,52 @@ def test_a_short_token_is_not_repeated_in_the_error(monkeypatch: pytest.MonkeyPa
         Settings(_env_file=None)
 
     assert "my-short-secret" not in str(error.value)
+
+
+def test_the_clustering_settings_have_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.cluster_eps_m == 5.0
+    assert settings.cluster_min_points == 2
+    assert settings.cluster_half_life_days == 30.0
+    assert settings.cluster_max_segment_distance_m == 25.0
+    assert settings.cluster_max_detections == 20_000
+
+
+def test_the_clustering_settings_come_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLUSTER_EPS_M", "7.5")
+    monkeypatch.setenv("CLUSTER_MIN_POINTS", "3")
+    monkeypatch.setenv("CLUSTER_HALF_LIFE_DAYS", "45")
+    monkeypatch.setenv("CLUSTER_MAX_SEGMENT_DISTANCE_M", "30")
+    monkeypatch.setenv("CLUSTER_MAX_DETECTIONS", "5000")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.cluster_eps_m == 7.5
+    assert settings.cluster_min_points == 3
+    assert settings.cluster_half_life_days == 45.0
+    assert settings.cluster_max_segment_distance_m == 30.0
+    assert settings.cluster_max_detections == 5000
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("CLUSTER_EPS_M", "0"),
+        ("CLUSTER_EPS_M", "nan"),
+        ("CLUSTER_EPS_M", "5000"),
+        ("CLUSTER_MIN_POINTS", "0"),
+        ("CLUSTER_HALF_LIFE_DAYS", "-1"),
+        ("CLUSTER_MAX_SEGMENT_DISTANCE_M", "inf"),
+        ("CLUSTER_MAX_DETECTIONS", "0"),
+    ],
+)
+def test_a_bad_clustering_setting_stops_the_service_from_starting(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
