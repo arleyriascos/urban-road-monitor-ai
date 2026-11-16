@@ -13,7 +13,8 @@ at least its length and the graph keeps every length at or above the straight
 line between its nodes. It is also consistent, so a node taken out of the heap
 already has its best cost and never has to be visited again.
 
-The cost of crossing an edge is ``length x (1 + k x damage)``.
+The cost of crossing an edge is ``length x (1 + k x damage)``. The edges of each node
+are walked straight from its singly linked list, with ``edges_from``.
 """
 
 import math
@@ -76,7 +77,7 @@ def _search(
         done[node] = True
         if node == target:
             return _build_result(graph, came_by, source, target, k, algorithm, explored)
-        for edge in graph.neighbors(node):
+        for edge in graph.edges_from(node):
             neighbor = edge.target
             if done[neighbor]:
                 continue
