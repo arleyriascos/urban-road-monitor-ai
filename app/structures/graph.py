@@ -2,7 +2,8 @@
 
 Each node of ``road_nodes`` gets an internal index from 0 to n - 1, so the
 graph, the min-heap and the union-find can work with plain lists. The database
-ids only appear when data enters or leaves the graph.
+ids only appear when data enters or leaves the graph. The edges that leave each node
+are kept in a singly linked list, one list per node: that is the adjacency list.
 
 A one-way segment becomes one edge, from its first node to its last node (the
 importer already flips OpenStreetMap ``oneway=-1`` streets). A two-way segment
@@ -24,6 +25,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from app.geo import haversine_m
+from app.structures.singly_linked_list import SinglyLinkedList
 from app.structures.union_find import UnionFind
 
 LENGTH_TOLERANCE_M = 0.2
@@ -81,8 +83,8 @@ class RoadGraph:
         """Internal index -> database node id."""
         self._latitudes: list[float] = []
         self._longitudes: list[float] = []
-        self._adjacency: list[list[Edge]] = []
-        """Edges that leave each node."""
+        self._adjacency: list[SinglyLinkedList[Edge]] = []
+        """Edges that leave each node, in a singly linked list per node."""
         self._segment_ids: set[int] = set()
         self._edge_count = 0
 
@@ -111,7 +113,7 @@ class RoadGraph:
         self._node_ids.append(node_id)
         self._latitudes.append(latitude)
         self._longitudes.append(longitude)
-        self._adjacency.append([])
+        self._adjacency.append(SinglyLinkedList())
         return index
 
     def has_node(self, node_id: int) -> bool:
@@ -164,10 +166,10 @@ class RoadGraph:
         length_m = max(length_m, straight_m)
 
         self._segment_ids.add(segment_id)
-        self._adjacency[start].append(Edge(end, segment_id, length_m, damage_score, False))
+        self._adjacency[start].push_back(Edge(end, segment_id, length_m, damage_score, False))
         self._edge_count += 1
         if not is_oneway:
-            self._adjacency[end].append(Edge(start, segment_id, length_m, damage_score, True))
+            self._adjacency[end].push_back(Edge(start, segment_id, length_m, damage_score, True))
             self._edge_count += 1
 
     def neighbors(self, index: int) -> Sequence[Edge]:
