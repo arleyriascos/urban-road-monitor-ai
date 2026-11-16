@@ -3,7 +3,7 @@ import random
 
 import pytest
 
-from app.geo import EARTH_RADIUS_M, bounding_box, haversine_m
+from app.geo import EARTH_RADIUS_M, bounding_box, haversine_m, min_distance_to_box_m
 
 # Values calculated with the backend's own haversineDistance (src/osm/geo.ts),
 # to make sure both services measure distances the same way.
@@ -103,3 +103,41 @@ def test_bounding_box_takes_every_longitude_near_a_pole() -> None:
 def test_bounding_box_rejects_a_negative_radius() -> None:
     with pytest.raises(ValueError, match="radius_m"):
         bounding_box(1.0, 1.0, -1.0)
+
+
+def test_distance_to_a_box_is_zero_inside_it() -> None:
+    box = (1.20, -77.30, 1.23, -77.26)
+
+    assert min_distance_to_box_m(1.21, -77.28, box) == 0.0
+    assert min_distance_to_box_m(1.20, -77.30, box) == 0.0
+
+
+def test_distance_to_a_box_straight_north_is_the_latitude_gap() -> None:
+    box = (1.20, -77.30, 1.23, -77.26)
+
+    assert min_distance_to_box_m(1.25, -77.28, box) == pytest.approx(
+        haversine_m(1.25, -77.28, 1.23, -77.28), rel=1e-9
+    )
+
+
+def test_distance_to_a_box_is_never_more_than_the_distance_to_any_point_in_it() -> None:
+    rng = random.Random(11)
+    for _ in range(300):
+        lat0 = rng.uniform(-70, 70)
+        lon0 = rng.uniform(-170, 160)
+        box = (lat0, lon0, lat0 + rng.uniform(0.0001, 2), lon0 + rng.uniform(0.0001, 5))
+        query_lat = rng.uniform(-80, 80)
+        query_lon = rng.uniform(-179, 179)
+        bound = min_distance_to_box_m(query_lat, query_lon, box)
+        for _ in range(20):
+            lat = rng.uniform(box[0], box[2])
+            lon = rng.uniform(box[1], box[3])
+            assert bound <= haversine_m(query_lat, query_lon, lat, lon) + 1e-6
+
+
+def test_distance_to_a_box_is_close_to_the_real_distance_for_a_small_box() -> None:
+    box = (1.2136, -77.2811, 1.2137, -77.2810)
+    corner_distance = haversine_m(1.2145, -77.2815, 1.2137, -77.2811)
+
+    assert min_distance_to_box_m(1.2145, -77.2815, box) <= corner_distance
+    assert min_distance_to_box_m(1.2145, -77.2815, box) > 0.9 * corner_distance
