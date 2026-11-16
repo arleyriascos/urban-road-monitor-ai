@@ -95,3 +95,45 @@ def test_never_sends_the_token_back(sample_payload: GraphPayload) -> None:
 
     assert TOKEN[:40] not in wrong.text
     assert TOKEN not in right.text
+
+
+CLUSTER_BODY: dict[str, Any] = {"detections": []}
+
+
+def test_the_right_token_gets_the_clusters(sample_payload: GraphPayload) -> None:
+    response = make_client(sample_payload, TOKEN).post(
+        "/clusters", json=CLUSTER_BODY, headers={"Authorization": f"Bearer {TOKEN}"}
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{}, {"Authorization": f"Bearer {'f' * 64}"}, {"Authorization": TOKEN}],
+    ids=["no-header", "wrong", "no-scheme"],
+)
+def test_clusters_answers_401_with_the_same_message(
+    sample_payload: GraphPayload, headers: dict[str, str]
+) -> None:
+    response = make_client(sample_payload, TOKEN).post(
+        "/clusters", json=CLUSTER_BODY, headers=headers
+    )
+
+    assert response.status_code == 401
+    assert response.json() == UNAUTHORIZED
+
+
+def test_clusters_checks_the_token_before_the_body(sample_payload: GraphPayload) -> None:
+    response = make_client(sample_payload, TOKEN).post("/clusters", json={"detections": "bad"})
+
+    assert response.status_code == 401
+
+
+def test_clusters_does_not_exist_without_a_configured_token(sample_payload: GraphPayload) -> None:
+    response = make_client(sample_payload, None).post(
+        "/clusters", json=CLUSTER_BODY, headers={"Authorization": f"Bearer {TOKEN}"}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
