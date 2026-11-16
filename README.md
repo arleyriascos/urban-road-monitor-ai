@@ -184,13 +184,14 @@ render.yaml        despliegue en Render (plan gratuito, región Virginia)
 
 ## Estructuras de datos
 
-Las cuatro están escritas a mano en `app/structures/`. Trabajan con índices internos de 0 a n−1: al cargar el grafo, cada nodo de `road_nodes` recibe un índice consecutivo, y los ids de la base solo aparecen al entrar y salir del grafo.
+Las cinco están escritas a mano en `app/structures/`. Trabajan con índices internos de 0 a n−1: al cargar el grafo, cada nodo de `road_nodes` recibe un índice consecutivo, y los ids de la base solo aparecen al entrar y salir del grafo.
 
 | Estructura | Para qué sirve | Operaciones y complejidad |
 |---|---|---|
 | Grafo dirigido (`RoadGraph`) | Red vial de Pasto. Un tramo de sentido único es una arista y uno de doble sentido son dos. Cada arista guarda el tramo, su longitud, su daño y si recorre el tramo al revés | Agregar nodo o tramo O(1); vecinos de un nodo O(grado) |
 | Min-Heap indexado (`IndexedMinHeap`) | Elegir el siguiente nodo en Dijkstra y A* | `push`, `pop_min` y `decrease_key` O(log n); `contains`, `priority_of` y `peek_min` O(1) |
 | Union-Find (`UnionFind`) | Encontrar la componente principal de la red y descartar pedazos de vía sueltos | `find`, `union` y `connected` O(α(n)) amortizado, casi constante |
+| Quadtree (`Quadtree`) | Guardar puntos del mapa y encontrar los cercanos sin medir todos: vecinos de un bache en DBSCAN, nodo más cercano a un clic y tramo más cercano a un bache | `insert` O(log n) en promedio; `query_box`, `query_radius` y `nearest` visitan solo los cuadrantes que pueden tener resultados |
 | Pila (`Stack`) | Poner el camino en orden de viaje: la búsqueda lo recorre del destino al origen y la pila lo invierte | `push`, `pop` y `peek` O(1) |
 
 El costo de cruzar una arista se calcula en cada consulta como `longitud × (1 + k × daño)`, porque `k` cambia con el criterio de la ruta: 0 para la más corta, 1 para la equilibrada y 3 para evitar baches. Nunca baja de la longitud, lo que mantiene válida la heurística de A*.
@@ -213,9 +214,33 @@ Cada estructura se prueba de dos formas: con ejemplos legibles y con cientos de 
 - **Resultado (`RouteResult`):** los tramos en orden de viaje (con su `segment_id`, si se recorren al revés, longitud, daño y costo), los nodos del camino, la distancia total, el costo total, cuántos nodos exploró la búsqueda y el algoritmo usado. Usa índices internos; `POST /routes` los traduce a los ids de la base.
 - **Origen igual a destino:** no es un error; da una ruta con cero tramos y distancia cero.
 - **Errores con nombre:** `NoRouteError` (no hay camino que respete los sentidos de las calles, aunque los nodos estén unidos por alguna calle), `OutsideNetworkError` (el clic quedó más lejos de la red que `MAX_SNAP_DISTANCE_M`, con la distancia real) e `InvalidPointError` (coordenadas inválidas).
-- **Ajuste del clic (`NodeLocator`):** toma solo los nodos de la componente principal que encuentra el Union-Find, y devuelve el más cercano con su distancia. La búsqueda es lineal; en la Etapa 4 el Quadtree la reemplaza sin cambiar la interfaz.
+- **Ajuste del clic (`NodeLocator`):** toma solo los nodos de la componente principal que encuentra el Union-Find, los guarda en un Quadtree y devuelve el más cercano con su distancia. Si dos nodos están igual de cerca, gana el de menor índice, igual que cuando la búsqueda era lineal.
 
 Las pruebas comparan Dijkstra con Bellman-Ford, un algoritmo simple y lento, y A* con Dijkstra, sobre cuadrículas de calles al azar con calles de sentido único. También comprueban cada ruta tramo por tramo contra el grafo.
+
+## Quadtree
+
+`app/structures/quadtree.py` divide el mapa en cuatro cuadrantes (SO, SE, NO, NE) cada vez que un rectángulo junta más de 8 puntos, hasta una profundidad máxima de 24. Un punto sobre una línea media va al cuadrante norte o este, así que cada punto cabe en un solo cuadrante. Si a la profundidad máxima quedan muchos puntos en el mismo lugar, la hoja los conserva todos en vez de seguir dividiendo.
+
+- `query_box(rectángulo)`: los puntos dentro de un rectángulo, bordes incluidos.
+- `query_radius(lat, lon, metros)`: los puntos dentro de un radio. Descarta cuadrantes con el rectángulo que contiene el círculo y mide la distancia haversine solo a los puntos que quedan.
+- `nearest(lat, lon, máximo)`: el punto más cercano. Entra primero al cuadrante más próximo y salta los que ya están más lejos que el mejor encontrado. Si dos puntos están igual de cerca gana el insertado primero, de modo que la respuesta no depende de cómo se dividió el árbol.
+
+La distancia mínima de un punto a un rectángulo (`min_distance_to_box_m`, en `app/geo.py`) es una cota inferior de la distancia a cualquier punto del rectángulo, incluso cuando el rectángulo cruza el meridiano 180. El Quadtree no admite rectángulos que lo crucen: toda Pasto queda lejos de ahí. Las pruebas comparan cada búsqueda con la versión simple que mide todos los puntos, con empates incluidos.
+
+## Agrupamiento de baches
+
+Cada vez que una cámara ve un bache queda una detección. Un mismo bache aparece en muchas detecciones, de viajes distintos y con el error del GPS del teléfono, así que hay que agruparlas.
+
+1. **DBSCAN (`app/clustering/dbscan.py`).** Dos detecciones a menos de `CLUSTER_EPS_M` metros (5 por defecto) son vecinas. Una detección con al menos `CLUSTER_MIN_POINTS` vecinas, contando la propia (2 por defecto), es un punto central y abre un grupo; el grupo crece con los vecinos de cada punto central que alcanza, así que sigue la línea que deja un carro al pasar. Los vecinos se buscan con `query_radius` del Quadtree. Los grupos se numeran en el orden en que el algoritmo los encuentra, así que la misma entrada da siempre las mismas etiquetas.
+2. **Baches.** Cada grupo es un bache `confirmed`. Una detección que ningún grupo alcanza no se descarta: es un bache `unconfirmed` de una sola detección, porque puede ser real y todavía nadie más pasó por ahí.
+3. **Centro y severidad (`summary.py`).** El centro es el promedio de las posiciones. La severidad sale de un voto de las detecciones, ponderado por su confianza; si hay empate gana la peor, porque conviene reparar un bache antes de tiempo y no dejar uno grave esperando.
+4. **Confianza.** Crece con cada detección y nunca pasa de 1: `1 − Π(1 − cᵢ)`, la probabilidad de que no todas se equivoquen. Cada detección pesa la mitad cada `CLUSTER_HALF_LIFE_DAYS` días (30 por defecto), así que un bache que nadie vuelve a ver se desvanece y uno que se ve de nuevo se recupera. Una detección posterior a `asOf` cuenta completa.
+5. **Tramo de calle (`SegmentLocator`).** Cada tramo se parte en puntos cada unos 10 metros (con todas sus esquinas) y los puntos van a un Quadtree. Para ubicar un bache se buscan las muestras cercanas y solo se mide la distancia exacta a los pocos tramos a los que pertenecen. La respuesta es la misma que medir todos los tramos: un tramo a `D` metros tiene una muestra a lo sumo a `D` más un paso. Si no hay tramo a menos de `CLUSTER_MAX_SEGMENT_DISTANCE_M`, el bache conserva su lugar en el mapa pero no cuenta para el costo de ninguna calle.
+
+El tramo puede traer su forma en el campo opcional `geometry` de `GET /internal/graph`, una lista de pares `[latitud, longitud]` desde el inicio hasta el final del tramo. Sin ella, el servicio usa la línea recta entre sus dos nodos, así que el cambio es compatible con un backend que todavía no la envía.
+
+Las pruebas comparan DBSCAN con una versión simple que mide todos los pares y siguen los mismos pasos, de modo que las etiquetas coinciden exactamente, no solo salvo renombrar grupos. También agrupan detecciones que imitan muchos viajes con error de GPS y comprueban que 20,000 detecciones se agrupan en unos segundos.
 
 ## Reglas del proyecto
 
