@@ -131,3 +131,25 @@ def test_the_nearest_node_is_never_beaten_by_another_node_of_the_network(
             assert haversine_m(latitude, longitude, other_latitude, other_longitude) >= (
                 snapped.distance_m - 1e-9
             )
+
+
+def test_the_quadtree_gives_the_same_node_as_checking_every_node() -> None:
+    rng = random.Random(31)
+    graph = RoadGraph()
+    for node_id in range(1, 801):
+        graph.add_node(node_id, 1.2 + rng.uniform(0, 0.02), -77.3 + rng.uniform(0, 0.02))
+    for node_id in range(1, 800):  # one long chain, so every node is in the main component
+        length = haversine_m(*graph.coordinates(node_id - 1), *graph.coordinates(node_id)) * 1.01
+        graph.add_segment(10_000 + node_id, node_id, node_id + 1, length, 0.0, False)
+    locator = NodeLocator(graph, max_distance_m=5_000.0)
+
+    for _ in range(300):
+        lat = 1.2 + rng.uniform(-0.001, 0.021)
+        lon = -77.3 + rng.uniform(-0.001, 0.021)
+        expected = min(
+            (haversine_m(lat, lon, *graph.coordinates(i)), i) for i in range(graph.node_count)
+        )
+
+        snapped = locator.snap(lat, lon)
+
+        assert (snapped.distance_m, snapped.index) == expected

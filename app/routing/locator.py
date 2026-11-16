@@ -5,16 +5,16 @@ by streets, found with the union-find. Loose pieces of road, like a parking lot
 that touches no other street, can never be part of a route, so a click near one
 is moved to the real network or rejected.
 
-The search is linear, and it is fast enough for the 7,613 nodes of Pasto. In
-Stage 4 the Quadtree replaces it without changing this interface.
+The nodes are kept in a Quadtree, so a click only looks at the nodes around it instead
+of all of them.
 """
 
 import math
 from dataclasses import dataclass
 
-from app.geo import haversine_m
 from app.routing.errors import InvalidPointError, OutsideNetworkError
 from app.structures.graph import GraphError, RoadGraph
+from app.structures.quadtree import Quadtree, bounds_around
 
 DEFAULT_MAX_DISTANCE_M = 200.0
 """How far a click may be from the network. It is adjusted when testing on real data."""
@@ -46,6 +46,12 @@ class NodeLocator:
             index for index in range(graph.node_count) if components.find(index) == main_root
         )
         """Nodes of the main component, in ascending index order."""
+        places = [graph.coordinates(index) for index in self._candidates]
+        self._tree: Quadtree[int] = Quadtree(bounds_around(places))
+        # Inserted in ascending index order: of two equally close nodes, the Quadtree
+        # returns the one inserted first, which is the one with the lowest index.
+        for index, (node_latitude, node_longitude) in zip(self._candidates, places, strict=True):
+            self._tree.insert(node_latitude, node_longitude, index)
 
     @property
     def max_distance_m(self) -> float:
@@ -67,13 +73,9 @@ class NodeLocator:
         if not (math.isfinite(longitude) and -180 <= longitude <= 180):
             raise InvalidPointError(f"invalid longitude: {longitude}")
 
-        best_index = -1
-        best_distance = math.inf
-        for index in self._candidates:
-            node_latitude, node_longitude = self._graph.coordinates(index)
-            distance = haversine_m(latitude, longitude, node_latitude, node_longitude)
-            if distance < best_distance:
-                best_index, best_distance = index, distance
+        nearest = self._tree.nearest(latitude, longitude)
+        assert nearest is not None  # the tree holds at least one node
+        best_index, best_distance = nearest.hit.value, nearest.distance_m
 
         if best_distance > self._max_distance_m:
             raise OutsideNetworkError(latitude, longitude, best_distance, self._max_distance_m)
