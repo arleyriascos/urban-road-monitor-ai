@@ -21,7 +21,7 @@ always find routes of equal cost.
 """
 
 import math
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 from app.geo import haversine_m
@@ -173,9 +173,18 @@ class RoadGraph:
             self._edge_count += 1
 
     def neighbors(self, index: int) -> Sequence[Edge]:
-        """Edges that leave a node, in the order they were added."""
+        """Edges that leave a node, in the order they were added, as a tuple."""
         self._check_index(index)
         return tuple(self._adjacency[index])
+
+    def edges_from(self, index: int) -> Iterator[Edge]:
+        """Walk the edges that leave a node, in the order they were added.
+
+        It follows the links of the node's list one by one and does not copy them, so
+        it is what the route search uses. ``neighbors`` gives the same edges as a tuple.
+        """
+        self._check_index(index)
+        return iter(self._adjacency[index])
 
     def components(self) -> UnionFind:
         """Group the nodes connected by any street, ignoring one-way rules.
