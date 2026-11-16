@@ -6,7 +6,7 @@ El servicio no se conecta a la base de datos: el backend le entrega los datos qu
 
 ## Estado
 
-Etapa 4, paquete 3: además de las rutas, el servicio agrupa las detecciones de baches con DBSCAN y las ubica en su tramo de calle con un Quadtree, en `POST /clusters`. Antes, en la Etapa 2, el servicio descarga el grafo de la red vial desde el backend, lo mantiene al día según su versión y responde rutas por HTTP en `POST /routes`, protegido con un token compartido. Debajo están las estructuras (grafo dirigido, Min-Heap indexado, Union-Find y Pila) y los algoritmos (Dijkstra y A*) de los bloques 2 y 3.
+Etapa 4, paquete 3: además de las rutas, el servicio agrupa las detecciones de baches con DBSCAN y las ubica en su tramo de calle con un Quadtree, en `POST /clusters`. Antes, en la Etapa 2, el servicio descarga el grafo de la red vial desde el backend, lo mantiene al día según su versión y responde rutas por HTTP en `POST /routes`, protegido con un token compartido. Debajo están las estructuras (grafo dirigido con su lista de adyacencia hecha de listas simples, Min-Heap indexado, Union-Find y Pila) y los algoritmos (Dijkstra y A*) de los bloques 2 y 3.
 
 ## Requisitos
 
@@ -167,9 +167,10 @@ app/
     search.py      motor de búsqueda, dijkstra y a_star
     service.py     responde una ruta con el grafo en memoria
   structures/
-    graph.py       grafo dirigido con lista de adyacencia
+    graph.py       grafo dirigido con lista de adyacencia (una lista simple por nodo)
     min_heap.py    Min-Heap indexado con decrease_key
     quadtree.py    Quadtree de puntos con búsqueda por rectángulo, radio y vecino más cercano
+    singly_linked_list.py  lista simple con push_back y recorrido
     stack.py       Pila
     union_find.py  Union-Find con compresión de caminos y unión por tamaño
 tests/             pruebas con pytest
@@ -184,7 +185,7 @@ render.yaml        despliegue en Render (plan gratuito, región Virginia)
 
 ## Estructuras de datos
 
-Las cinco están escritas a mano en `app/structures/`. Trabajan con índices internos de 0 a n−1: al cargar el grafo, cada nodo de `road_nodes` recibe un índice consecutivo, y los ids de la base solo aparecen al entrar y salir del grafo.
+Las seis están escritas a mano en `app/structures/`. Trabajan con índices internos de 0 a n−1: al cargar el grafo, cada nodo de `road_nodes` recibe un índice consecutivo, y los ids de la base solo aparecen al entrar y salir del grafo.
 
 | Estructura | Para qué sirve | Operaciones y complejidad |
 |---|---|---|
@@ -192,7 +193,10 @@ Las cinco están escritas a mano en `app/structures/`. Trabajan con índices int
 | Min-Heap indexado (`IndexedMinHeap`) | Elegir el siguiente nodo en Dijkstra y A* | `push`, `pop_min` y `decrease_key` O(log n); `contains`, `priority_of` y `peek_min` O(1) |
 | Union-Find (`UnionFind`) | Encontrar la componente principal de la red y descartar pedazos de vía sueltos | `find`, `union` y `connected` O(α(n)) amortizado, casi constante |
 | Quadtree (`Quadtree`) | Guardar puntos del mapa y encontrar los cercanos sin medir todos: vecinos de un bache en DBSCAN, nodo más cercano a un clic y tramo más cercano a un bache | `insert` O(log n) en promedio; `query_box`, `query_radius` y `nearest` visitan solo los cuadrantes que pueden tener resultados |
+| Lista simple (`SinglyLinkedList`) | Guardar los tramos que salen de cada intersección: es la lista de adyacencia del grafo, una lista por nodo, que A* y Dijkstra recorren con `edges_from` | `push_back` y `len` O(1); recorrer la lista O(n) |
 | Pila (`Stack`) | Poner el camino en orden de viaje: la búsqueda lo recorre del destino al origen y la pila lo invierte | `push`, `pop` y `peek` O(1) |
+
+Los tramos de cada nodo quedan en el orden en que se agregaron. `neighbors()` los entrega como una tupla y `edges_from()` los recorre uno por uno, sin copiarlos: es lo que usa la búsqueda.
 
 El costo de cruzar una arista se calcula en cada consulta como `longitud × (1 + k × daño)`, porque `k` cambia con el criterio de la ruta: 0 para la más corta, 1 para la equilibrada y 3 para evitar baches. Nunca baja de la longitud, lo que mantiene válida la heurística de A*.
 
