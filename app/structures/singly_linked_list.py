@@ -5,7 +5,8 @@ that is its adjacency list. Every link holds a value and a pointer to the next l
 and the last link points to nothing. The list also remembers its last link, so adding
 at the end does not have to walk the whole list.
 
-Complexity: ``push_back`` and ``len`` are O(1); iterating over the list is O(n).
+Complexity: ``push_back`` and ``len`` are O(1); iterating over the list and checking
+its invariants (``is_valid``) are O(n).
 """
 
 from collections.abc import Iterator
@@ -54,3 +55,24 @@ class SinglyLinkedList[T]:
             self._tail.next = node
         self._tail = node
         self._size += 1
+
+    def is_valid(self) -> bool:
+        """Check the invariants of the list.
+
+        An empty list has no first and no last link. Otherwise, walking from the first
+        link must reach exactly as many links as the size says, with no loop, and the
+        last one reached must be the remembered last link.
+        It is O(n), so it is meant for tests and for the presentation.
+        """
+        if self._head is None or self._tail is None:
+            return self._head is None and self._tail is None and self._size == 0
+        count = 0
+        last: _Node[T] | None = None
+        node: _Node[T] | None = self._head
+        while node is not None:
+            count += 1
+            if count > self._size:
+                return False  # more links than the size says, or a loop
+            last = node
+            node = node.next
+        return count == self._size and last is self._tail
