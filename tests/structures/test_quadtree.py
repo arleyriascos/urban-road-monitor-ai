@@ -3,6 +3,7 @@ import random
 
 import pytest
 
+from app.geo import haversine_m
 from app.structures.quadtree import Quadtree, QuadtreeError
 
 Point = tuple[float, float]
@@ -182,3 +183,60 @@ def test_query_box_finds_every_point_stacked_at_the_same_spot() -> None:
         tree.insert(1.2136, -77.2811, i)
 
     assert len(tree.query_box((1.2136, -77.2811, 1.2136, -77.2811))) == 30
+
+
+def test_query_radius_finds_the_points_within_the_distance_and_how_far_they_are() -> None:
+    tree: Quadtree[str] = Quadtree(PASTO)
+    tree.insert(1.2136, -77.2811, "center")
+    tree.insert(1.21363, -77.2811, "3 m north")
+    tree.insert(1.21366, -77.2811, "6.7 m north")
+    tree.insert(1.2136, -77.28117, "7.8 m west")
+
+    matches = tree.query_radius(1.2136, -77.2811, 5.0)
+
+    found = {match.hit.value: match.distance_m for match in matches}
+    assert set(found) == {"center", "3 m north"}
+    assert found["center"] == 0.0
+    assert found["3 m north"] == pytest.approx(3.3, abs=0.1)
+
+
+def test_query_radius_includes_a_point_at_exactly_the_radius() -> None:
+    tree: Quadtree[int] = Quadtree(PASTO)
+    tree.insert(1.2140, -77.2810, 0)
+    radius = haversine_m(1.2136, -77.2811, 1.2140, -77.2810)
+
+    assert len(tree.query_radius(1.2136, -77.2811, radius)) == 1
+    assert tree.query_radius(1.2136, -77.2811, radius * 0.999) == []
+
+
+def test_query_radius_matches_a_plain_search_for_many_random_circles() -> None:
+    points = _random_points(2_000, seed=8)
+    tree: Quadtree[int] = Quadtree(PASTO)
+    for i, (latitude, longitude) in enumerate(points):
+        tree.insert(latitude, longitude, i)
+    rng = random.Random(9)
+
+    for _ in range(200):
+        lat = rng.uniform(1.15, 1.27)
+        lon = rng.uniform(-77.35, -77.22)
+        radius = rng.choice([0.0, 5.0, 50.0, 500.0, 3_000.0])
+        found = sorted(match.hit.value for match in tree.query_radius(lat, lon, radius))
+        expected = [
+            i for i, (la, lo) in enumerate(points) if haversine_m(lat, lon, la, lo) <= radius
+        ]
+        assert found == expected
+
+
+@pytest.mark.parametrize("radius", [-1.0, math.nan, math.inf])
+def test_query_radius_rejects_a_radius_that_is_not_a_distance(radius: float) -> None:
+    tree: Quadtree[int] = Quadtree(PASTO)
+
+    with pytest.raises(QuadtreeError, match="radius_m"):
+        tree.query_radius(1.2, -77.3, radius)
+
+
+def test_query_radius_around_a_place_outside_the_bounds_still_works() -> None:
+    tree: Quadtree[int] = Quadtree(PASTO)
+    tree.insert(1.15, -77.35, 0)
+
+    assert len(tree.query_radius(1.1499, -77.3501, 100.0)) == 1

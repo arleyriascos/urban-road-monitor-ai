@@ -18,7 +18,7 @@ the antimeridian is not supported. Pasto is far from it.
 import math
 from dataclasses import dataclass
 
-from app.geo import BoundingBox
+from app.geo import BoundingBox, bounding_box, haversine_m
 
 WORLD: BoundingBox = (-90.0, -180.0, 90.0, 180.0)
 """The default area of a Quadtree: the whole Earth."""
@@ -45,6 +45,14 @@ class QuadHit[T]:
     order: int
     """How many points were inserted before this one: 0 for the first. Searches return
     points in tree order, and this lets a caller put them back in insertion order."""
+
+
+@dataclass(frozen=True, slots=True)
+class QuadMatch[T]:
+    """A stored point found by a search around a place, with how far it is."""
+
+    hit: QuadHit[T]
+    distance_m: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +171,23 @@ class Quadtree[T]:
                 if min_lat <= latitude <= max_lat and min_lon <= longitude <= max_lon
             )
         return found
+
+    def query_radius(
+        self, latitude: float, longitude: float, radius_m: float
+    ) -> list[QuadMatch[T]]:
+        """Every point within radius_m meters of a place, with its distance, in tree order.
+
+        The tree first takes the points of the rectangle that surrounds the circle,
+        which is quick, and then measures only those with the haversine distance.
+        """
+        if not (math.isfinite(radius_m) and radius_m >= 0):
+            raise QuadtreeError(f"radius_m must be a number >= 0, got {radius_m}")
+        matches: list[QuadMatch[T]] = []
+        for hit in self.query_box(bounding_box(latitude, longitude, radius_m)):
+            distance = haversine_m(latitude, longitude, hit.latitude, hit.longitude)
+            if distance <= radius_m:
+                matches.append(QuadMatch(hit, distance))
+        return matches
 
     def stats(self) -> QuadStats:
         """Count the nodes and find the deepest level."""
