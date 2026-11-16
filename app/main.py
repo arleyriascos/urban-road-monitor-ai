@@ -8,11 +8,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
+from app.clustering.service import ClusterService
 from app.config import Settings
 from app.errors import register_error_handlers
 from app.graph.client import BackendGraphClient, GraphDownloadError
 from app.graph.payload import GraphPayload
 from app.graph.store import GraphStore, LoadedGraph, build_loaded_graph
+from app.routes.clusters import router as clusters_router
 from app.routes.health import router as health_router
 from app.routes.route_search import router as route_router
 from app.routing.service import RouteService
@@ -74,9 +76,11 @@ def create_app(
     app.state.settings = config
     app.state.graph_store = graph_store
     app.state.route_service = RouteService(graph_store)
+    app.state.cluster_service = ClusterService(graph_store, config)
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(route_router)
+    app.include_router(clusters_router)
     return app
 
 
