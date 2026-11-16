@@ -1,3 +1,4 @@
+import itertools
 import math
 import random
 
@@ -10,6 +11,7 @@ from app.geo import (
     min_distance_to_box_m,
     project_on_polyline,
     project_on_segment,
+    sample_polyline,
 )
 
 # Values calculated with the backend's own haversineDistance (src/osm/geo.ts),
@@ -248,3 +250,42 @@ class TestProjectOnPolyline:
     def test_a_line_without_points_is_an_error(self) -> None:
         with pytest.raises(ValueError, match="at least one point"):
             project_on_polyline(1.0, 1.0, [])
+
+
+class TestSamplePolyline:
+    L_SHAPE = [(1.2136, -77.2811), (1.2136, -77.2801), (1.2146, -77.2801)]
+
+    def test_it_keeps_the_ends_and_the_corners(self) -> None:
+        samples = sample_polyline(self.L_SHAPE, 10.0)
+
+        assert samples[0] == self.L_SHAPE[0]
+        assert samples[-1] == self.L_SHAPE[-1]
+        assert self.L_SHAPE[1] in samples
+
+    def test_no_two_neighbor_samples_are_farther_than_the_step(self) -> None:
+        samples = sample_polyline(self.L_SHAPE, 10.0)
+
+        gaps = [haversine_m(*a, *b) for a, b in itertools.pairwise(samples)]
+        assert max(gaps) <= 10.0
+        assert len(samples) > 20
+
+    def test_a_short_piece_keeps_only_its_ends(self) -> None:
+        assert sample_polyline([(1.0, 1.0), (1.00001, 1.0)], 10.0) == [(1.0, 1.0), (1.00001, 1.0)]
+
+    def test_a_single_point_gives_itself(self) -> None:
+        assert sample_polyline([(1.0, 1.0)], 10.0) == [(1.0, 1.0)]
+
+    def test_it_can_cross_the_180_degree_line(self) -> None:
+        samples = sample_polyline([(0.0, 179.9995), (0.0, -179.9995)], 20.0)
+
+        assert all(-180.0 <= lon <= 180.0 for _, lon in samples)
+        assert max(haversine_m(*a, *b) for a, b in itertools.pairwise(samples)) <= 20.0
+
+    @pytest.mark.parametrize("step", [0.0, -1.0, math.nan, math.inf])
+    def test_the_step_must_be_a_positive_distance(self, step: float) -> None:
+        with pytest.raises(ValueError, match="step_m"):
+            sample_polyline(self.L_SHAPE, step)
+
+    def test_a_line_without_points_is_an_error(self) -> None:
+        with pytest.raises(ValueError, match="at least one point"):
+            sample_polyline([], 10.0)

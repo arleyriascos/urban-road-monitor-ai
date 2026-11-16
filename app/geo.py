@@ -164,3 +164,28 @@ def project_on_polyline(
     assert best is not None
     fraction = best_travelled / total if total > 0 else 0.0
     return SegmentProjection(best.latitude, best.longitude, fraction, best.distance_m)
+
+
+def sample_polyline(
+    points: Sequence[tuple[float, float]], step_m: float
+) -> list[tuple[float, float]]:
+    """Points along a line, at most ``step_m`` meters apart, that include every corner.
+
+    The first and last points of the line are always in the result. Each piece is cut
+    into equal parts no longer than ``step_m``, so a long straight street gets a point
+    every few meters and a short one keeps just its ends.
+    """
+    if not (math.isfinite(step_m) and step_m > 0):
+        raise ValueError(f"step_m must be a number > 0, got {step_m}")
+    if not points:
+        raise ValueError("a polyline needs at least one point")
+    samples = [points[0]]
+    for start, end in itertools.pairwise(points):
+        parts = max(1, math.ceil(haversine_m(*start, *end) / step_m))
+        delta_lon = (end[1] - start[1] + 180.0) % 360.0 - 180.0
+        for i in range(1, parts):
+            t = i / parts
+            lon = (start[1] + t * delta_lon + 180.0) % 360.0 - 180.0
+            samples.append((start[0] + t * (end[0] - start[0]), lon))
+        samples.append(end)
+    return samples
