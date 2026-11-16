@@ -1,12 +1,12 @@
 # Urban Road Monitor — servicio de IA
 
-Servicio en Python con FastAPI del proyecto final Urban Road Monitor (Estructura de Datos). Calcula las rutas sobre la red vial de Pasto y, más adelante, agrupará las detecciones de baches.
+Servicio en Python con FastAPI del proyecto final Urban Road Monitor (Estructura de Datos). Calcula las rutas sobre la red vial de Pasto y agrupa las detecciones de baches en baches únicos.
 
 El servicio no se conecta a la base de datos: el backend le entrega los datos que necesita. El frontend nunca lo llama directamente; solo habla con el backend.
 
 ## Estado
 
-Bloque 5 de la Etapa 2: el servicio descarga el grafo de la red vial desde el backend, lo mantiene al día según su versión y responde rutas por HTTP en `POST /routes`, protegido con un token compartido. Debajo están las estructuras (grafo dirigido, Min-Heap indexado, Union-Find y Pila) y los algoritmos (Dijkstra y A*) de los bloques 2 y 3.
+Etapa 4, paquete 3: además de las rutas, el servicio agrupa las detecciones de baches con DBSCAN y las ubica en su tramo de calle con un Quadtree, en `POST /clusters`. Antes, en la Etapa 2, el servicio descarga el grafo de la red vial desde el backend, lo mantiene al día según su versión y responde rutas por HTTP en `POST /routes`, protegido con un token compartido. Debajo están las estructuras (grafo dirigido, Min-Heap indexado, Union-Find y Pila) y los algoritmos (Dijkstra y A*) de los bloques 2 y 3.
 
 ## Requisitos
 
@@ -55,6 +55,11 @@ Equivalen a `lint`, `prettier --check`, `typecheck` y `test` del backend.
 | `BACKEND_URL` | Dirección del backend que entrega el grafo. En producción debe empezar por `https://`, para que el token nunca viaje en texto plano; no puede llevar usuario, contraseña ni parámetros |
 | `INTERNAL_TOKEN` | Token compartido con el backend, de al menos 32 caracteres y el mismo valor en los dos servicios. Protege `POST /routes` y sirve para descargar el grafo. Vacío apaga `POST /routes` (responde 404). Nunca se escribe en `.env.example` |
 | `MAX_SNAP_DISTANCE_M` | Opcional. A cuántos metros de la red puede quedar un clic (por defecto 200) |
+| `CLUSTER_EPS_M` | Opcional. Dos detecciones a menos de estos metros son el mismo bache (por defecto 5) |
+| `CLUSTER_MIN_POINTS` | Opcional. Detecciones necesarias, contando la propia, para confirmar un bache (por defecto 2) |
+| `CLUSTER_HALF_LIFE_DAYS` | Opcional. Días tras los cuales una detección pesa la mitad en la confianza (por defecto 30) |
+| `CLUSTER_MAX_SEGMENT_DISTANCE_M` | Opcional. A cuántos metros de una calle puede quedar un bache y contarse sobre ella (por defecto 25) |
+| `CLUSTER_MAX_DETECTIONS` | Opcional. Máximo de detecciones por petición a `POST /clusters` (por defecto 20000) |
 
 ## Endpoints
 
@@ -62,6 +67,7 @@ Equivalen a `lint`, `prettier --check`, `typecheck` y `test` del backend.
 |---|---|---|---|
 | GET | `/health` | Pública | Siempre 200, con el estado del grafo: si está cargado, su versión, cuántos nodos y tramos tiene y cuándo se cargó |
 | POST | `/routes` | `Authorization: Bearer <INTERNAL_TOKEN>` | La ruta más barata entre dos clics |
+| POST | `/clusters` | `Authorization: Bearer <INTERNAL_TOKEN>` | Los baches que resultan de agrupar las detecciones |
 | GET | `/docs` | Pública | Documentación interactiva de FastAPI |
 
 ### `POST /routes`
@@ -91,6 +97,27 @@ Los errores tienen la misma forma que en el backend, `{ "error": { "code", "mess
 | 422 | `INVALID_REQUEST` | Cuerpo mal formado, coordenadas fuera de rango, `k` negativo o un campo desconocido |
 | 503 | `GRAPH_UNAVAILABLE` | No hay ningún grafo cargado y no se pudo descargar |
 
+### `POST /clusters`
+
+Solo lo llama el backend. El servicio no guarda nada: el backend envía todas las detecciones que quiere agrupar y guarda lo que recibe.
+
+```json
+{
+  "detections": [
+    { "id": 1, "latitude": 1.21405, "longitude": -77.2805, "severity": "grave",
+      "confidence": 0.82, "detectedAt": "2026-11-16T12:00:00Z" }
+  ],
+  "graphVersion": "940ab0350236d4a94de0b11d6ed78931",
+  "asOf": "2026-11-16T12:05:00Z",
+  "epsM": 5,
+  "minPoints": 2
+}
+```
+
+Solo `detections` es obligatorio. `severity` es `leve`, `moderado` o `grave`; `detectedAt` debe llevar zona horaria. Con `graphVersion` el servicio ubica cada bache en su tramo; sin ella, o si el grafo no está disponible, los baches se agrupan igual pero sin tramo. `asOf` es el momento en que se mide la confianza (por defecto, ahora); `epsM` y `minPoints` reemplazan, solo en esa petición, los valores de las variables de entorno.
+
+La respuesta trae el resumen (`detectionCount`, `clusterCount`, `confirmedCount`, `placedCount`, `computationMs`) y la lista `clusters`. Cada bache lleva `detectionIds`, `count`, el centro (`latitude`, `longitude`), `severity`, `confidence`, `status` (`confirmed` o `unconfirmed`), `segmentId`, `segmentDistanceM`, `segmentFraction` (0 al inicio del tramo y 1 al final) y las fechas de la primera y la última detección. Los errores son 401 (token), 404 (sin `INTERNAL_TOKEN` configurado) y 422: `INVALID_REQUEST`, `TOO_MANY_DETECTIONS` (con `received` y `limit`) o `DUPLICATE_DETECTION_ID`.
+
 ## Cómo se carga y se mantiene el grafo
 
 El grafo vive en memoria (unos 5 MB con la red de Pasto) y se descarga del backend con `GET /internal/graph`.
@@ -114,7 +141,15 @@ app/
   errors.py        errores en JSON con la misma forma que el backend
   geo.py           distancia haversine, la misma fórmula del backend
   main.py          creación de la aplicación, calentamiento del grafo y registros
-  security.py      protección de POST /routes con INTERNAL_TOKEN
+  security.py      protección de POST /routes y POST /clusters con INTERNAL_TOKEN
+  clustering/
+    models.py      Detection y Severity, con su validación
+    dbscan.py      DBSCAN con vecinos buscados en el Quadtree
+    summary.py     centro, severidad por voto y confianza de un grupo
+    clusters.py    build_clusters: de detecciones a baches
+    placement.py   ubica cada bache en su tramo de calle
+    contract.py    petición y respuesta de POST /clusters
+    service.py     responde una petición de agrupamiento
   graph/
     client.py      descarga del grafo desde el backend, con sus reintentos
     payload.py     forma de GET /internal/graph
@@ -122,21 +157,25 @@ app/
   routes/
     health.py      GET /health
     route_search.py  POST /routes
+    clusters.py    POST /clusters
   routing/
     contract.py    petición y respuesta de POST /routes
     errors.py      NoRouteError, OutsideNetworkError e InvalidPointError
     locator.py     NodeLocator: del clic al nodo más cercano
     result.py      RouteResult y RouteStep
+    segment_locator.py  SegmentLocator: del bache al tramo de calle más cercano
     search.py      motor de búsqueda, dijkstra y a_star
     service.py     responde una ruta con el grafo en memoria
   structures/
     graph.py       grafo dirigido con lista de adyacencia
     min_heap.py    Min-Heap indexado con decrease_key
+    quadtree.py    Quadtree de puntos con búsqueda por rectángulo, radio y vecino más cercano
     stack.py       Pila
     union_find.py  Union-Find con compresión de caminos y unión por tamaño
 tests/             pruebas con pytest
   conftest.py      redes de calle de prueba escritas a mano y cuadrículas al azar
-  api/             POST /routes, el token y la forma de los errores
+  api/             POST /routes y POST /clusters, el token y la forma de los errores
+  clustering/      DBSCAN contra una versión simple, resúmenes, ubicación y viajes realistas
   graph/           descarga del grafo (con un backend simulado) y sus reglas de recarga
   routing/         pruebas de la búsqueda de rutas y del ajuste del clic
   structures/      ejemplos y comparaciones al azar de cada estructura
