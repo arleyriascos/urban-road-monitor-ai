@@ -1,8 +1,9 @@
 import math
+import random
 
 import pytest
 
-from app.geo import EARTH_RADIUS_M, haversine_m
+from app.geo import EARTH_RADIUS_M, bounding_box, haversine_m
 
 # Values calculated with the backend's own haversineDistance (src/osm/geo.ts),
 # to make sure both services measure distances the same way.
@@ -52,3 +53,53 @@ def test_half_the_earth_is_the_longest_distance() -> None:
 
 def test_never_exceeds_the_antipodal_distance_because_of_rounding() -> None:
     assert haversine_m(90.0, 0.0, -90.0, 0.0) <= math.pi * EARTH_RADIUS_M * (1 + 1e-12)
+
+
+def test_bounding_box_of_a_zero_radius_is_the_point_itself() -> None:
+    assert bounding_box(1.2136, -77.2811, 0.0) == (1.2136, -77.2811, 1.2136, -77.2811)
+
+
+def test_bounding_box_is_about_the_radius_in_every_direction() -> None:
+    min_lat, min_lon, max_lat, max_lon = bounding_box(1.2136, -77.2811, 5.0)
+
+    assert haversine_m(1.2136, -77.2811, max_lat, -77.2811) == pytest.approx(5.0, rel=1e-6)
+    assert haversine_m(1.2136, -77.2811, min_lat, -77.2811) == pytest.approx(5.0, rel=1e-6)
+    assert haversine_m(1.2136, -77.2811, 1.2136, max_lon) == pytest.approx(5.0, rel=1e-3)
+    assert haversine_m(1.2136, -77.2811, 1.2136, min_lon) == pytest.approx(5.0, rel=1e-3)
+
+
+def test_bounding_box_holds_every_point_within_the_radius() -> None:
+    rng = random.Random(7)
+    for _ in range(300):
+        lat = rng.uniform(-80, 80)
+        lon = rng.uniform(-170, 170)
+        radius = rng.uniform(0, 50_000)
+        min_lat, min_lon, max_lat, max_lon = bounding_box(lat, lon, radius)
+        for _ in range(20):
+            bearing = rng.uniform(0, 2 * math.pi)
+            distance = rng.uniform(0, radius)
+            # A point at a known distance and bearing from the center (spherical formula).
+            angle = distance / EARTH_RADIUS_M
+            phi1, lam1 = math.radians(lat), math.radians(lon)
+            phi2 = math.asin(
+                math.sin(phi1) * math.cos(angle)
+                + math.cos(phi1) * math.sin(angle) * math.cos(bearing)
+            )
+            lam2 = lam1 + math.atan2(
+                math.sin(bearing) * math.sin(angle) * math.cos(phi1),
+                math.cos(angle) - math.sin(phi1) * math.sin(phi2),
+            )
+            assert min_lat - 1e-9 <= math.degrees(phi2) <= max_lat + 1e-9
+            assert min_lon - 1e-9 <= math.degrees(lam2) <= max_lon + 1e-9
+
+
+def test_bounding_box_takes_every_longitude_near_a_pole() -> None:
+    min_lat, min_lon, max_lat, max_lon = bounding_box(89.9999, 10.0, 50_000)
+
+    assert (min_lon, max_lon) == (-180.0, 180.0)
+    assert max_lat == 90.0
+
+
+def test_bounding_box_rejects_a_negative_radius() -> None:
+    with pytest.raises(ValueError, match="radius_m"):
+        bounding_box(1.0, 1.0, -1.0)
